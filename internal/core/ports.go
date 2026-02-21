@@ -41,13 +41,13 @@ type LLMProvider interface {
 type VectorStore interface {
 	// Upsert: 插入或更新向量
 	// id: 数据的唯一标识
-	// vector: 文本对应的向量外信息（比如这段话属于哪个 Agent，
-	// metadata: 存一些额来源于哪个文件）
+	// vector: 文本对应的向量
+	// metadata: 存一些额外信息（比如这段话属于哪个 Agent，来源于哪个文件）
 	Upsert(ctx context.Context, id string, vector []float32, metadata map[string]interface{}) error
 
 	// Search: 根据向量搜索相似内容
 	// topK: 返回前 K 个最相似的结果
-	Search(ctx context.Context, vector []float32, topK int) ([]SearchResult, error)
+	Search(ctx context.Context, agentId uint, vector []float32, topK int) ([]SearchResult, error)
 
 	// Delete: 根据 ID 删除向量 (知识库更新时需要)
 	Delete(ctx context.Context, id string) error
