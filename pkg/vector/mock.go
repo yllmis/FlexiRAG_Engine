@@ -270,6 +270,8 @@ func (h resultMinHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h *resultMinHeap) Push(x interface{}) {
 	*h = append(*h, x.(core.SearchResult))
 }
+
+// Pop 返回堆顶元素（当前最差的候选）
 func (h *resultMinHeap) Pop() interface{} {
 	old := *h
 	n := len(old)

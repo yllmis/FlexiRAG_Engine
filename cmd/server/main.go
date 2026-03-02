@@ -2,15 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-
+	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
 	"flexirag-engine/internal/model"
 	"flexirag-engine/pkg/llm"
 	"flexirag-engine/pkg/vector"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,13 +20,13 @@ func main() {
 	if apiKey == "" {
 		log.Fatal("请先设置环境变量 OPENAI_API_KEY")
 	}
-	// 在这里启动你的服务器，使用 apiKey 进行 OpenAI API 的调用
+
 	llmProvider := llm.NewGLMClient(apiKey)
 	vectorStore := vector.NewMockVectorStore()
 
 	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore)
+	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
 
-	// 测试，灌入一些数据
 	ctx := context.Background()
 	mockAgent := setupMockData(ctx, llmProvider, vectorStore)
 
@@ -36,9 +36,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	// 聊天接口
 	r.POST("/api/v1/chat", func(c *gin.Context) {
-		// 定义前端传过来的请求体格式
 		var req struct {
 			Query string `json:"query" binding:"required"`
 		}
@@ -47,8 +45,6 @@ func main() {
 			return
 		}
 
-		// 调用核心引擎处理提问
-		// 传入 request 的 Context，如果前端断开连接，能顺着链路取消大模型调用
 		answer, err := agentEngine.ProcessQuery(c.Request.Context(), mockAgent, req.Query)
 		if err != nil {
 			log.Printf("处理失败: %v\n", err)
@@ -56,53 +52,89 @@ func main() {
 			return
 		}
 
-		// 返回大模型的回答
+		c.JSON(http.StatusOK, gin.H{"answer": answer})
+	})
+
+	r.POST("/api/v1/knowledge/ingest", func(c *gin.Context) {
+		var req struct {
+			Text      string `json:"text" binding:"required"`
+			AgentID   uint   `json:"agent_id"`
+			ChunkSize int    `json:"chunk_size"`
+			Overlap   int    `json:"overlap"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误，需要 text 字段"})
+			return
+		}
+
+		agentID := req.AgentID
+		if agentID == 0 {
+			agentID = mockAgent.ID
+		}
+
+		chunkSize := req.ChunkSize
+		if chunkSize <= 0 {
+			chunkSize = 300
+		}
+
+		overlap := req.Overlap
+		if overlap < 0 {
+			overlap = 0
+		}
+		if overlap >= chunkSize {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "overlap 必须小于 chunk_size"})
+			return
+		}
+
+		err := chunkService.IngestText(c.Request.Context(), agentID, req.Text, chunkSize, overlap)
+		if err != nil {
+			log.Printf("知识入库失败: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "知识入库失败"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"answer": answer,
+			"message":    "知识入库成功，已自动切片并向量化",
+			"agent_id":   agentID,
+			"chunk_size": chunkSize,
+			"overlap":    overlap,
 		})
 	})
 
-	// 6. 监听端口并启动服务
 	fmt.Println("🚀 FlexiRAG Engine 启动成功！监听端口 :8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("服务器启动失败: ", err)
 	}
-
 }
 
-// setupMockData 仅用于 MVP 阶段的测试数据初始化
 func setupMockData(ctx context.Context, llmProvider *llm.GLMClient, vectorStore *vector.MockVectorStore) *model.Agent {
-	fmt.Println("正在初始化 Mock Agent 与向量知识库 (这会消耗一点点 Token)...")
+	fmt.Println("正在启动 ChunkService 自动切片并录入长篇知识库...")
 
-	// 1. 创建一个教务小助手 Agent
+	// 1. 创建 Agent
 	mockAgent := &model.Agent{
 		ID:           1,
 		Name:         "教务小助手",
-		SystemPrompt: "你是 FlexiRAG 大学的教务助理。请严谨、礼貌地回答学生问题。如果问题不在你的上下文中，请说“抱歉，教务处目前没有相关通知”。",
+		SystemPrompt: "你是 FlexiRAG 大学的教务助理。请严谨、礼貌地依据上下文回答问题。如果资料里没有，请说不知道。",
 	}
 
-	// 2. 准备两条私有知识
-	texts := []string{
-		"FlexiRAG 大学 2026 年秋季四六级考试报名时间为 9 月 10 日至 9 月 20 日，报名费为 30 元，请在教务系统线上缴费。",
-		"FlexiRAG 大学今年的暑假放假时间为 7 月 15 日，开学报到时间为 9 月 1 日。",
-	}
+	// 2. 模拟管理员上传了一篇超长的《2026年新生入学与考试指南》
+	// 这是一整段长字符串，不是数组了！
+	longDocument := `FlexiRAG 大学 2026 年新生入学指南与教务通知。
+第一章：报到与住宿。今年的暑假放假时间为 7 月 15 日。新生开学报到时间统一安排在 9 月 1 日，请务必携带录取通知书原件。新生宿舍分配将在 8 月 25 日通过教务系统官网公布，请同学们自行登录查询。
+第二章：关于英语四六级考试。为了保证考试资源的合理分配，大一新生第一学期不允许报考英语四级。2026 年秋季四六级考试的报名时间为 9 月 10 日至 9 月 20 日，报名费为 30 元。请注意，所有的缴费均须在教务系统线上完成，学校不会安排任何老师私下收取微信转账。
+第三章：校园生活。学校目前共有三个食堂，其中第二食堂的麻辣烫最受学生欢迎，营业时间为早上 7 点到晚上 10 点。`
 
-	// 3. 将知识转化为向量
-	vectors, err := llmProvider.Embed(ctx, texts)
+	// 3. 召唤你的指挥官！
+	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
+
+	// 4. 让指挥官切碎长文并入库
+	// 设定 ChunkSize=100 字，Overlap=20 字
+	err := chunkService.IngestText(ctx, mockAgent.ID, longDocument, 100, 20)
 	if err != nil {
-		log.Fatalf("初始化数据 Embed 失败: %v", err)
+		log.Fatalf("知识库长文录入失败: %v", err)
 	}
 
-	// 4. 存入内存向量库 (注意：一定要传入 agent_id = 1)
-	for i, text := range texts {
-		id := fmt.Sprintf("knowledge_%d", i)
-		metadata := map[string]interface{}{
-			"content":  text,
-			"agent_id": mockAgent.ID,
-		}
-		_ = vectorStore.Upsert(ctx, id, vectors[i], metadata)
-	}
-
-	fmt.Println("✅ 知识库初始化完成！")
+	fmt.Println("✅ 长文切片与知识库录入完成！你可以开始提问了。")
 	return mockAgent
 }
