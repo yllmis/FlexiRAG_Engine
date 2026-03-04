@@ -1,4 +1,4 @@
-package model
+package agent_mgmt
 
 type Agent struct {
 	ID uint `json:"id"`

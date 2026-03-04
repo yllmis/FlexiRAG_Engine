@@ -3,7 +3,7 @@ package knowledge
 import (
 	"context"
 	"flexirag-engine/internal/core"
-	"flexirag-engine/internal/pkg/textsplit"
+	"flexirag-engine/pkg/textsplit"
 	"fmt"
 	"time"
 )

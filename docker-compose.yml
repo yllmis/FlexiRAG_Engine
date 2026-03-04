@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres:
+    # 直接使用 pgvector 官方打包好的镜像，基于稳定的 PostgreSQL 16
+    image: pgvector/pgvector:pg16
+    container_name: flexirag-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: root             # 数据库账号
+      POSTGRES_PASSWORD: 12345 # 数据库密码
+      POSTGRES_DB: flexirag_db        # 默认创建的数据库名称
+    ports:
+      - "5432:5432"                   # 将容器内的 5432 端口映射到本机的 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data # 数据持久化挂载，防止容器重启后数据丢失
+
+volumes:
+  pgdata:

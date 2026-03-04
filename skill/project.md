@@ -48,10 +48,10 @@
   - [x] 定义核心接口契约 (Interface)。
   - [x] 实现 RAG 执行器 (`Executor`) 的调度编排。
   - [x] 接入 OpenAI SDK 实现 Chat 与 Embed。
-- [ ] **Phase 2: 本地闭环运行**
-  - [ ] 实现基于内存的 Mock 向量数据库 (Cosine Similarity 计算)。
-  - [ ] 开发 Gin HTTP 路由，对外暴露 `/api/v1/chat` 接口。
-  - [ ] 使用 Postman 跑通首次完整问答。
+- [x] **Phase 2: 本地闭环运行**
+  - [x] 实现基于内存的 Mock 向量数据库 (Cosine Similarity 计算)。
+  - [x] 开发 Gin HTTP 路由，对外暴露 `/api/v1/chat` 接口。
+  - [x] 使用 Postman 跑通首次完整问答。
 - [ ] **Phase 3: 持久化与生产级改造**
   - [ ] 接入 PostgreSQL 持久化 Agent 配置。
   - [ ] 实现后台离线文本切片（Chunking）与批量向量化入库逻辑。
