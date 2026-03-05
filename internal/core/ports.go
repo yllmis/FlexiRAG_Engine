@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"flexirag-engine/internal/core/agent_mgmt"
 )
 
 // ==========================================
@@ -51,4 +52,10 @@ type VectorStore interface {
 
 	// Delete: 根据 ID 删除向量 (知识库更新时需要)
 	Delete(ctx context.Context, id string) error
+}
+
+type AgentRepository interface {
+	Create(ctx context.Context, agent *agent_mgmt.Agent) error
+
+	GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
 }
