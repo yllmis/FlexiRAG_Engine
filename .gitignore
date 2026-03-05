@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Go build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.out
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# IDE/editor
+.idea/
+.vscode/
