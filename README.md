@@ -1,13 +1,17 @@
 # FlexiRAG Engine
 
-一个基于 Go 构建的多租户 RAG Agent 引擎，当前已具备可运行的 MVP v1：
+一个基于 Go 构建的多租户 RAG Agent 引擎，当前已具备可运行的 v1.1：
 - 支持长文本自动切片、向量化、持久化到 PostgreSQL（pgvector）
 - 支持按 `agent_id` 隔离的知识检索与问答
 - 支持 GLM（OpenAI 兼容模式）对话与 Embedding
+- 支持 Agent 创建、花名册查询、系统提示词更新
 
-## v1 功能范围
+## v1.1 功能范围
 
 - 健康检查：`GET /ping`
+- 创建 Agent：`POST /api/v1/agents`
+- Agent 花名册：`GET /api/v1/agents`
+- 更新 Agent 系统提示词：`PATCH /api/v1/agents/:id/system-prompt`
 - 知识摄入：`POST /api/v1/knowledge/ingest`
 - 问答接口：`POST /api/v1/chat`
 - 向量存储：`PGVectorStore`（PostgreSQL + pgvector）
@@ -33,7 +37,8 @@
 ### 1. 启动 PostgreSQL（pgvector）
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
+docker compose exec -T postgres psql -U root -d flexirag_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 默认连接信息（见 `docker-compose.yml`）：
@@ -63,6 +68,31 @@ go run ./cmd/server/main.go
 curl -s http://127.0.0.1:8080/ping
 ```
 
+### 创建 Agent
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "教务小助手",
+    "system_prompt": "你是一个严谨的教务助理，请仅依据上下文回答。"
+  }'
+```
+
+### 查询 Agent 花名册
+
+```bash
+curl -s http://127.0.0.1:8080/api/v1/agents
+```
+
+### 更新 Agent 系统提示词
+
+```bash
+curl -s -X PATCH http://127.0.0.1:8080/api/v1/agents/1/system-prompt \
+  -H "Content-Type: application/json" \
+  -d '{"system_prompt":"你是资深教务顾问，回答需简洁准确。"}'
+```
+
 ### 长文本摄入（自动切片）
 
 ```bash
@@ -83,6 +113,8 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"agent_id":1,"query":"四六级报名时间是什么时候？"}'
 ```
+
+注意：`chat` 和 `knowledge/ingest` 现在都要求显式传入 `agent_id`，不再自动兜底到默认 Agent。
 
 ## 常见问题
 

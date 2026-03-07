@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 
 	apiV1 "flexirag-engine/internal/api/v1"
-	"flexirag-engine/internal/core/agent_mgmt"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
 	"flexirag-engine/internal/infrastructure/llm"
@@ -42,21 +40,11 @@ func main() {
 		log.Fatal("初始化 Agent 仓储失败: ", err)
 	}
 
-	// 测试连接和自动建表功能
-	defaultAgent, _ := agentRepo.GetByID(context.Background(), 1)
-	if defaultAgent == nil {
-		agentRepo.Create(context.Background(), &agent_mgmt.Agent{
-			Name:         "智能助理",
-			SystemPrompt: "你是一个专业的AI助手。请严格根据检索到的上下文信息回答问题。",
-		})
-		fmt.Println("✅ 默认的 1 号 Agent 已自动创建并存入 PostgreSQL！")
-	}
-
 	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore)
 	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
 
 	r := gin.Default()
-	handler := apiV1.NewHandler(agentEngine, chunkService)
+	handler := apiV1.NewHandler(agentEngine, chunkService, agentRepo)
 	apiV1.RegisterRoutes(r, handler)
 
 	fmt.Println("🚀 FlexiRAG Engine 启动成功！监听端口 :8080")

@@ -58,4 +58,8 @@ type AgentRepository interface {
 	Create(ctx context.Context, agent *agent_mgmt.Agent) error
 
 	GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
+
+	List(ctx context.Context) ([]agent_mgmt.Agent, error)
+
+	UpdateSystemPrompt(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error)
 }

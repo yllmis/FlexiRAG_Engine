@@ -39,3 +39,27 @@ func (r *PGAgentRepo) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, 
 	}
 	return &agent, nil
 }
+
+func (r *PGAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
+	var agents []agent_mgmt.Agent
+	err := r.db.WithContext(ctx).Order("id ASC").Find(&agents).Error
+	if err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
+func (r *PGAgentRepo) UpdateSystemPrompt(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
+	result := r.db.WithContext(ctx).
+		Model(&agent_mgmt.Agent{}).
+		Where("id = ?", id).
+		Update("system_prompt", systemPrompt)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	return r.GetByID(ctx, id)
+}
