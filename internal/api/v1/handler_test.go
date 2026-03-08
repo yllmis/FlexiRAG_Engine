@@ -14,6 +14,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type testAPIResponse struct {
+	Code int             `json:"code"`
+	Msg  string          `json:"msg"`
+	Data json.RawMessage `json:"data"`
+}
+
 type mockAgentRepo struct {
 	createFn             func(ctx context.Context, agent *agent_mgmt.Agent) error
 	getByIDFn            func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
@@ -74,7 +80,14 @@ func TestUpdateAgentSystemPrompt_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
 	}
-	if got := resp["system_prompt"]; got != "新提示词" {
+	if got := resp["code"]; got != float64(http.StatusOK) {
+		t.Fatalf("期望 code=200，实际=%v", got)
+	}
+	data, ok := resp["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("响应 data 不是对象：%v", resp["data"])
+	}
+	if got := data["system_prompt"]; got != "新提示词" {
 		t.Fatalf("期望 system_prompt=新提示词，实际=%v", got)
 	}
 }
@@ -93,6 +106,14 @@ func TestUpdateAgentSystemPrompt_InvalidID(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("期望状态码 400，实际 %d，响应：%s", w.Code, w.Body.String())
+	}
+
+	var resp testAPIResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("期望业务码 400，实际 %d", resp.Code)
 	}
 }
 
@@ -180,14 +201,22 @@ func TestListAgents_Success(t *testing.T) {
 		t.Fatalf("期望状态码 200，实际 %d，响应：%s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Agents []agent_mgmt.Agent `json:"agents"`
-	}
+	var resp testAPIResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
 	}
-	if len(resp.Agents) != 2 {
-		t.Fatalf("期望返回 2 个 Agent，实际 %d", len(resp.Agents))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("期望业务码 200，实际 %d", resp.Code)
+	}
+
+	var data struct {
+		Agents []agent_mgmt.Agent `json:"agents"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if len(data.Agents) != 2 {
+		t.Fatalf("期望返回 2 个 Agent，实际 %d", len(data.Agents))
 	}
 }
 
@@ -209,5 +238,13 @@ func TestListAgents_RepoError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("期望状态码 500，实际 %d，响应：%s", w.Code, w.Body.String())
+	}
+
+	var resp testAPIResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("期望业务码 500，实际 %d", resp.Code)
 	}
 }

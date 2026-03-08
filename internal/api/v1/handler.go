@@ -20,6 +20,28 @@ type Handler struct {
 	agentRepo    core.AgentRepository
 }
 
+type apiResponse struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
+func respondSuccess(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, apiResponse{
+		Code: http.StatusOK,
+		Msg:  "success",
+		Data: data,
+	})
+}
+
+func respondError(c *gin.Context, httpStatus int, msg string) {
+	c.JSON(httpStatus, apiResponse{
+		Code: httpStatus,
+		Msg:  msg,
+		Data: nil,
+	})
+}
+
 func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentRepo core.AgentRepository) *Handler {
 	return &Handler{
 		agentEngine:  agentEngine,
@@ -29,7 +51,7 @@ func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkSe
 }
 
 func (h *Handler) Ping(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "pong"})
+	respondSuccess(c, gin.H{"message": "pong"})
 }
 
 func (h *Handler) Chat(c *gin.Context) {
@@ -38,29 +60,29 @@ func (h *Handler) Chat(c *gin.Context) {
 		AgentID uint   `json:"agent_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误，需要 query 和 agent_id 字段"})
+		respondError(c, http.StatusBadRequest, "参数错误，需要 query 和 agent_id 字段")
 		return
 	}
 
 	agent, err := h.agentRepo.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
 		log.Printf("查询 Agent 失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 Agent 失败"})
+		respondError(c, http.StatusInternalServerError, "查询 Agent 失败")
 		return
 	}
 	if agent == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
 	answer, err := h.agentEngine.ProcessQuery(c.Request.Context(), agent, req.Query)
 	if err != nil {
 		log.Printf("处理失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 思考失败，请稍后再试"})
+		respondError(c, http.StatusInternalServerError, "AI 思考失败，请稍后再试")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"answer": answer})
+	respondSuccess(c, gin.H{"answer": answer})
 }
 
 func (h *Handler) IngestKnowledge(c *gin.Context) {
@@ -72,18 +94,18 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误，需要 text 和 agent_id 字段"})
+		respondError(c, http.StatusBadRequest, "参数错误，需要 text 和 agent_id 字段")
 		return
 	}
 
 	agent, err := h.agentRepo.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
 		log.Printf("查询 Agent 失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 Agent 失败"})
+		respondError(c, http.StatusInternalServerError, "查询 Agent 失败")
 		return
 	}
 	if agent == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
@@ -97,18 +119,18 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 		overlap = 0
 	}
 	if overlap >= chunkSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "overlap 必须小于 chunk_size"})
+		respondError(c, http.StatusBadRequest, "overlap 必须小于 chunk_size")
 		return
 	}
 
 	err = h.chunkService.IngestText(c.Request.Context(), req.AgentID, req.Text, chunkSize, overlap)
 	if err != nil {
 		log.Printf("知识入库失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "知识入库失败"})
+		respondError(c, http.StatusInternalServerError, "知识入库失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondSuccess(c, gin.H{
 		"message":    "知识入库成功，已持久化到 PostgreSQL",
 		"agent_id":   req.AgentID,
 		"chunk_size": chunkSize,
@@ -123,14 +145,14 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误，需要 name 和 system_prompt 字段"})
+		respondError(c, http.StatusBadRequest, "参数错误，需要 name 和 system_prompt 字段")
 		return
 	}
 
 	name := strings.TrimSpace(req.Name)
 	systemPrompt := strings.TrimSpace(req.SystemPrompt)
 	if name == "" || systemPrompt == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name 和 system_prompt 不能为空"})
+		respondError(c, http.StatusBadRequest, "name 和 system_prompt 不能为空")
 		return
 	}
 
@@ -141,11 +163,11 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 
 	if err := h.agentRepo.Create(c.Request.Context(), agent); err != nil {
 		log.Printf("创建 Agent 失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Agent 失败"})
+		respondError(c, http.StatusInternalServerError, "创建 Agent 失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondSuccess(c, gin.H{
 		"agent_id":      agent.ID,
 		"name":          agent.Name,
 		"system_prompt": agent.SystemPrompt,
@@ -156,17 +178,17 @@ func (h *Handler) ListAgents(c *gin.Context) {
 	agents, err := h.agentRepo.List(c.Request.Context())
 	if err != nil {
 		log.Printf("查询 Agent 花名册失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 Agent 花名册失败"})
+		respondError(c, http.StatusInternalServerError, "查询 Agent 花名册失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"agents": agents})
+	respondSuccess(c, gin.H{"agents": agents})
 }
 
 func (h *Handler) UpdateAgentSystemPrompt(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || idVal == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent ID"})
+		respondError(c, http.StatusBadRequest, "无效的 Agent ID")
 		return
 	}
 
@@ -174,28 +196,28 @@ func (h *Handler) UpdateAgentSystemPrompt(c *gin.Context) {
 		SystemPrompt string `json:"system_prompt" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误，需要 system_prompt 字段"})
+		respondError(c, http.StatusBadRequest, "参数错误，需要 system_prompt 字段")
 		return
 	}
 
 	systemPrompt := strings.TrimSpace(req.SystemPrompt)
 	if systemPrompt == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "system_prompt 不能为空"})
+		respondError(c, http.StatusBadRequest, "system_prompt 不能为空")
 		return
 	}
 
 	agent, err := h.agentRepo.UpdateSystemPrompt(c.Request.Context(), uint(idVal), systemPrompt)
 	if err != nil {
 		log.Printf("更新 Agent 系统提示词失败: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 系统提示词失败"})
+		respondError(c, http.StatusInternalServerError, "更新 Agent 系统提示词失败")
 		return
 	}
 	if agent == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	respondSuccess(c, gin.H{
 		"agent_id":      agent.ID,
 		"name":          agent.Name,
 		"system_prompt": agent.SystemPrompt,
