@@ -49,11 +49,22 @@ func (r *PGAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
 	return agents, nil
 }
 
-func (r *PGAgentRepo) UpdateSystemPrompt(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
+func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+	updates := map[string]interface{}{}
+	if name != nil {
+		updates["name"] = *name
+	}
+	if systemPrompt != nil {
+		updates["system_prompt"] = *systemPrompt
+	}
+	if len(updates) == 0 {
+		return r.GetByID(ctx, id)
+	}
+
 	result := r.db.WithContext(ctx).
 		Model(&agent_mgmt.Agent{}).
 		Where("id = ?", id).
-		Update("system_prompt", systemPrompt)
+		Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error
 	}

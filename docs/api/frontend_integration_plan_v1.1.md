@@ -53,7 +53,7 @@ Base URL（本地后端）：`http://127.0.0.1:8080`
 ## 4. 前端工程建议目录（Vue 3 + Vite + TS + Tailwind）
 
 ```text
-frontend/
+web/
   index.html
   package.json
   vite.config.ts

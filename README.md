@@ -11,7 +11,7 @@
 - 健康检查：`GET /ping`
 - 创建 Agent：`POST /api/v1/agents`
 - Agent 花名册：`GET /api/v1/agents`
-- 更新 Agent 系统提示词：`PATCH /api/v1/agents/:id/system-prompt`
+- 更新 Agent：`PUT /api/v1/agents/:id`
 - 知识摄入：`POST /api/v1/knowledge/ingest`
 - 问答接口：`POST /api/v1/chat`
 - 向量存储：`PGVectorStore`（PostgreSQL + pgvector）
@@ -85,12 +85,12 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/agents \
 curl -s http://127.0.0.1:8080/api/v1/agents
 ```
 
-### 更新 Agent 系统提示词
+### 更新 Agent
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8080/api/v1/agents/1/system-prompt \
+curl -s -X PUT http://127.0.0.1:8080/api/v1/agents/1 \
   -H "Content-Type: application/json" \
-  -d '{"system_prompt":"你是资深教务顾问，回答需简洁准确。"}'
+  -d '{"name":"教务升级版助手","system_prompt":"你是资深教务顾问，回答需简洁准确。"}'
 ```
 
 ### 长文本摄入（自动切片）

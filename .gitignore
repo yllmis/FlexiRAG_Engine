@@ -25,3 +25,8 @@ coverage.out
 # IDE/editor
 .idea/
 .vscode/
+
+# Web frontend artifacts
+web/node_modules/
+web/dist/
+web/.vite/

@@ -185,7 +185,7 @@ func (h *Handler) ListAgents(c *gin.Context) {
 	respondSuccess(c, gin.H{"agents": agents})
 }
 
-func (h *Handler) UpdateAgentSystemPrompt(c *gin.Context) {
+func (h *Handler) UpdateAgent(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || idVal == 0 {
 		respondError(c, http.StatusBadRequest, "无效的 Agent ID")
@@ -193,23 +193,43 @@ func (h *Handler) UpdateAgentSystemPrompt(c *gin.Context) {
 	}
 
 	var req struct {
-		SystemPrompt string `json:"system_prompt" binding:"required"`
+		Name         *string `json:"name"`
+		SystemPrompt *string `json:"system_prompt"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "参数错误，需要 system_prompt 字段")
+		respondError(c, http.StatusBadRequest, "参数错误，JSON 格式不合法")
 		return
 	}
 
-	systemPrompt := strings.TrimSpace(req.SystemPrompt)
-	if systemPrompt == "" {
-		respondError(c, http.StatusBadRequest, "system_prompt 不能为空")
+	var namePtr *string
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			respondError(c, http.StatusBadRequest, "name 不能为空")
+			return
+		}
+		namePtr = &name
+	}
+
+	var promptPtr *string
+	if req.SystemPrompt != nil {
+		systemPrompt := strings.TrimSpace(*req.SystemPrompt)
+		if systemPrompt == "" {
+			respondError(c, http.StatusBadRequest, "system_prompt 不能为空")
+			return
+		}
+		promptPtr = &systemPrompt
+	}
+
+	if namePtr == nil && promptPtr == nil {
+		respondError(c, http.StatusBadRequest, "至少提供 name 或 system_prompt 其中一个字段")
 		return
 	}
 
-	agent, err := h.agentRepo.UpdateSystemPrompt(c.Request.Context(), uint(idVal), systemPrompt)
+	agent, err := h.agentRepo.Update(c.Request.Context(), uint(idVal), namePtr, promptPtr)
 	if err != nil {
-		log.Printf("更新 Agent 系统提示词失败: %v\n", err)
-		respondError(c, http.StatusInternalServerError, "更新 Agent 系统提示词失败")
+		log.Printf("更新 Agent 失败: %v\n", err)
+		respondError(c, http.StatusInternalServerError, "更新 Agent 失败")
 		return
 	}
 	if agent == nil {

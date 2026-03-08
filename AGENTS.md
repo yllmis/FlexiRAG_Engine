@@ -39,7 +39,7 @@
 - 先补 Port 接口，再补基础设施实现，再暴露 Handler 与 Router。
 - RESTful 风格优先：
   - 列表查询使用 `GET /resources`
-  - 局部更新使用 `PATCH /resources/:id/field`
+  - 局部更新使用 `PUT /resources/:id`
 
 ## 7. 文档维护
 

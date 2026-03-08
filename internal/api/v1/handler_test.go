@@ -21,10 +21,10 @@ type testAPIResponse struct {
 }
 
 type mockAgentRepo struct {
-	createFn             func(ctx context.Context, agent *agent_mgmt.Agent) error
-	getByIDFn            func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
-	listFn               func(ctx context.Context) ([]agent_mgmt.Agent, error)
-	updateSystemPromptFn func(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error)
+	createFn  func(ctx context.Context, agent *agent_mgmt.Agent) error
+	getByIDFn func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
+	listFn    func(ctx context.Context) ([]agent_mgmt.Agent, error)
+	updateFn  func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
 }
 
 func (m *mockAgentRepo) Create(ctx context.Context, agent *agent_mgmt.Agent) error {
@@ -48,26 +48,34 @@ func (m *mockAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
 	return nil, nil
 }
 
-func (m *mockAgentRepo) UpdateSystemPrompt(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
-	if m.updateSystemPromptFn != nil {
-		return m.updateSystemPromptFn(ctx, id, systemPrompt)
+func (m *mockAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+	if m.updateFn != nil {
+		return m.updateFn(ctx, id, name, systemPrompt)
 	}
 	return nil, nil
 }
 
-func TestUpdateAgentSystemPrompt_Success(t *testing.T) {
+func TestUpdateAgent_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentRepo{
-		updateSystemPromptFn: func(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
-			return &agent_mgmt.Agent{ID: id, Name: "测试Agent", SystemPrompt: systemPrompt}, nil
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+			updatedName := "测试Agent"
+			updatedPrompt := "旧提示词"
+			if name != nil {
+				updatedName = *name
+			}
+			if systemPrompt != nil {
+				updatedPrompt = *systemPrompt
+			}
+			return &agent_mgmt.Agent{ID: id, Name: updatedName, SystemPrompt: updatedPrompt}, nil
 		},
 	})
 
 	r := gin.New()
-	r.PATCH("/api/v1/agents/:id/system-prompt", h.UpdateAgentSystemPrompt)
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/1/system-prompt", strings.NewReader(`{"system_prompt":"新提示词"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/1", strings.NewReader(`{"name":"新名称","system_prompt":"新提示词"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -90,16 +98,19 @@ func TestUpdateAgentSystemPrompt_Success(t *testing.T) {
 	if got := data["system_prompt"]; got != "新提示词" {
 		t.Fatalf("期望 system_prompt=新提示词，实际=%v", got)
 	}
+	if got := data["name"]; got != "新名称" {
+		t.Fatalf("期望 name=新名称，实际=%v", got)
+	}
 }
 
-func TestUpdateAgentSystemPrompt_InvalidID(t *testing.T) {
+func TestUpdateAgent_InvalidID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentRepo{})
 	r := gin.New()
-	r.PATCH("/api/v1/agents/:id/system-prompt", h.UpdateAgentSystemPrompt)
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/abc/system-prompt", strings.NewReader(`{"system_prompt":"x"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/abc", strings.NewReader(`{"system_prompt":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -117,14 +128,14 @@ func TestUpdateAgentSystemPrompt_InvalidID(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentSystemPrompt_EmptyPrompt(t *testing.T) {
+func TestUpdateAgent_EmptyPrompt(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentRepo{})
 	r := gin.New()
-	r.PATCH("/api/v1/agents/:id/system-prompt", h.UpdateAgentSystemPrompt)
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/1/system-prompt", strings.NewReader(`{"system_prompt":"   "}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/1", strings.NewReader(`{"system_prompt":"   "}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -134,19 +145,36 @@ func TestUpdateAgentSystemPrompt_EmptyPrompt(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentSystemPrompt_NotFound(t *testing.T) {
+func TestUpdateAgent_NoField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := NewHandler(nil, nil, &mockAgentRepo{})
+	r := gin.New()
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/1", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望状态码 400，实际 %d，响应：%s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAgent_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentRepo{
-		updateSystemPromptFn: func(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
 			return nil, nil
 		},
 	})
 
 	r := gin.New()
-	r.PATCH("/api/v1/agents/:id/system-prompt", h.UpdateAgentSystemPrompt)
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/1/system-prompt", strings.NewReader(`{"system_prompt":"x"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/1", strings.NewReader(`{"system_prompt":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -156,19 +184,19 @@ func TestUpdateAgentSystemPrompt_NotFound(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentSystemPrompt_RepoError(t *testing.T) {
+func TestUpdateAgent_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentRepo{
-		updateSystemPromptFn: func(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error) {
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
 			return nil, errors.New("db error")
 		},
 	})
 
 	r := gin.New()
-	r.PATCH("/api/v1/agents/:id/system-prompt", h.UpdateAgentSystemPrompt)
+	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/1/system-prompt", strings.NewReader(`{"system_prompt":"x"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/1", strings.NewReader(`{"system_prompt":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

@@ -61,5 +61,5 @@ type AgentRepository interface {
 
 	List(ctx context.Context) ([]agent_mgmt.Agent, error)
 
-	UpdateSystemPrompt(ctx context.Context, id uint, systemPrompt string) (*agent_mgmt.Agent, error)
+	Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
 }
