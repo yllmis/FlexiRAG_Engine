@@ -32,7 +32,7 @@ onMounted(async () => {
           <td class="py-2">{{ agent.name }}</td>
           <td class="py-2">{{ agent.system_prompt }}</td>
           <td class="py-2">
-            <RouterLink class="rounded bg-indigo-600 px-2 py-1 text-white" :to="`/agents/${agent.agent_id || agent.id}/edit`">
+            <RouterLink class="inline-block whitespace-nowrap rounded bg-indigo-600 px-3 py-1 text-white" :to="`/agents/${agent.agent_id || agent.id}/edit`">
               编辑
             </RouterLink>
           </td>
