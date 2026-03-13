@@ -8,19 +8,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// Config 数据库配置参数 从YAML中获取	
+// Config 数据库配置参数 从YAML中获取
 type Config struct {
 	Host     string
 	Port     int
 	User     string
 	Password string
 	DBName   string
+	SSLMode  string
+	TimeZone string
 }
 
 // NewPostgresDB 创建并配置数据库连接池
 func NewPostgresDB(cfg Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
-		cfg.Host, cfg.User, cfg.Password, cfg.DBName, cfg.Port)
+	sslMode := cfg.SSLMode
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	timeZone := cfg.TimeZone
+	if timeZone == "" {
+		timeZone = "Asia/Shanghai"
+	}
+
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
+		cfg.Host, cfg.User, cfg.Password, cfg.DBName, cfg.Port, sslMode, timeZone)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {

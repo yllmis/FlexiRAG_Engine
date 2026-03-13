@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+database:
+  host: 127.0.0.1
+  port: 5432
+  user: root
+  password: 12345
+  dbname: flexirag_db
+  sslmode: disable
+  timezone: Asia/Shanghai
+
+llm:
+  provider: glm
+  api_key: ""
+  base_url: https://open.bigmodel.cn/api/paas/v4/
+  chat_model: glm-4-flash
+  embed_model: embedding-3

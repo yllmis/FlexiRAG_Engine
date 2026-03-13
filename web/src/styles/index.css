@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  background: #e2e8f0;
+}
+
 body {
   margin: 0;
+  color: #0f172a;
+  font-family: "IBM Plex Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
 }

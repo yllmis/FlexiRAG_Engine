@@ -4,29 +4,43 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	apiV1 "flexirag-engine/internal/api/v1"
+	"flexirag-engine/internal/config"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
+	"flexirag-engine/internal/infrastructure/database"
 	"flexirag-engine/internal/infrastructure/llm"
 	"flexirag-engine/internal/infrastructure/repository"
 	"flexirag-engine/internal/infrastructure/vector"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/sashabaranov/go-openai"
 )
 
 func main() {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("请先设置环境变量 OPENAI_API_KEY")
+	cfg, err := config.Load(os.Getenv("APP_CONFIG_PATH"))
+	if err != nil {
+		log.Fatal("加载配置失败: ", err)
 	}
 
-	llmProvider := llm.NewGLMClient(apiKey)
-	dsn := "host=localhost user=root password=12345 dbname=flexirag_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+	llmProvider := llm.NewGLMClientWithConfig(
+		cfg.LLM.APIKey,
+		cfg.LLM.BaseURL,
+		cfg.LLM.ChatModel,
+		openai.EmbeddingModel(cfg.LLM.EmbedModel),
+	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := database.NewPostgresDB(database.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		DBName:   cfg.Database.DBName,
+		SSLMode:  cfg.Database.SSLMode,
+		TimeZone: cfg.Database.TimeZone,
+	})
 	if err != nil {
 		log.Fatal("连接 PostgreSQL 失败: ", err)
 	}
@@ -47,8 +61,9 @@ func main() {
 	handler := apiV1.NewHandler(agentEngine, chunkService, agentRepo)
 	apiV1.RegisterRoutes(r, handler)
 
-	fmt.Println("🚀 FlexiRAG Engine 启动成功！监听端口 :8080")
-	if err := r.Run(":8080"); err != nil {
+	addr := ":" + strconv.Itoa(cfg.Server.Port)
+	fmt.Printf("🚀 FlexiRAG Engine 启动成功！监听端口 %s\n", addr)
+	if err := r.Run(addr); err != nil {
 		log.Fatal("服务器启动失败: ", err)
 	}
 }
