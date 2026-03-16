@@ -16,3 +16,8 @@ llm:
   base_url: https://open.bigmodel.cn/api/paas/v4/
   chat_model: glm-4-flash
   embed_model: embedding-3
+
+security:
+  admin_token: "flexirag-secret-123"
+  rate_limit_per_minute: 60
+  audit_queue_size: 1024

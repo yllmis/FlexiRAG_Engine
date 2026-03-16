@@ -21,6 +21,7 @@ coverage.out
 # Environment files
 .env
 .env.*
+configs/app.local.yaml
 
 # IDE/editor
 .idea/

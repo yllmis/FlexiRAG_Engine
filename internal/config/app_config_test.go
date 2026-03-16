@@ -41,6 +41,12 @@ llm:
 	if cfg.LLM.BaseURL == "" || cfg.LLM.ChatModel == "" || cfg.LLM.EmbedModel == "" {
 		t.Fatal("LLM 默认配置未生效")
 	}
+	if cfg.Security.AdminToken == "" {
+		t.Fatal("security.admin_token 默认值未生效")
+	}
+	if cfg.Security.RateLimitPerMinute <= 0 || cfg.Security.AuditQueueSize <= 0 {
+		t.Fatal("security 默认阈值未生效")
+	}
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
@@ -64,6 +70,7 @@ llm:
 	t.Setenv("SERVER_PORT", "9090")
 	t.Setenv("DB_HOST", "db.internal")
 	t.Setenv("OPENAI_API_KEY", "override-key")
+	t.Setenv("ADMIN_TOKEN", "custom-admin-token")
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -78,6 +85,9 @@ llm:
 	}
 	if cfg.LLM.APIKey != "override-key" {
 		t.Fatalf("环境变量 OPENAI_API_KEY 覆盖失败，实际 %s", cfg.LLM.APIKey)
+	}
+	if cfg.Security.AdminToken != "custom-admin-token" {
+		t.Fatalf("环境变量 ADMIN_TOKEN 覆盖失败，实际 %s", cfg.Security.AdminToken)
 	}
 }
 

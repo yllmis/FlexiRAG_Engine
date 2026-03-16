@@ -2,15 +2,33 @@
 
 本文档用于记录项目阶段性变更，便于新开窗口后快速了解当前状态与开发进度。
 
+## 2026-03-16
+
+- 已同步 README 与安全方案文档口径：明确当前已完成 P0 安全基线（静态 Token 鉴权、单机限流、异步审计三件套）。
+- README 已补充 `security` 配置示例与环境变量说明：`ADMIN_TOKEN`、`RATE_LIMIT_PER_MINUTE`、`AUDIT_QUEUE_SIZE`。
+- README 已新增“为什么 P0 先用静态 Token”说明，阐明分阶段策略（先最小防护，再升级 IAM）。
+- 安全基线方案文档已新增“为什么 P0 采用静态 Token”章节，明确其过渡性质与后续升级路径（JWT/API Key）。
+- 前端鉴权来源已收敛为仅 `VITE_ADMIN_TOKEN`：移除 `localStorage.admin_token` 覆盖逻辑，避免联调时因多来源冲突导致 401。
+- 前端请求层已新增一次性诊断日志：启动后首个请求会提示是否成功读取 `VITE_ADMIN_TOKEN`（不输出敏感值，仅输出长度）。
+
+## 2026-03-15
+
+- 已完成安全基线模块 P0 代码落地：新增静态 Token 鉴权、中间件限流、异步审计（有界队列 + 降级 + 可观测计数）。
+- 路由已收敛为“读接口公开、写接口保护”：`POST/PUT/chat/ingest` 需 Bearer Token 且受限流控制。
+- 配置层新增 `security` 配置段，支持 `ADMIN_TOKEN`、`RATE_LIMIT_PER_MINUTE`、`AUDIT_QUEUE_SIZE`。
+- 新增审计仓储 `audit_logs` 表自动迁移，以及异步审计写入 Worker。
+- 前端 API 客户端已支持注入 `Authorization: Bearer <token>`（读取 `localStorage.admin_token` 或 `VITE_ADMIN_TOKEN`）。
+- 补充单测：鉴权、限流、异步审计、配置覆盖等关键路径。
+
 ## 2026-03-13
 
+- 已新增本地私有配置文件 `configs/app.local.yaml`，并在 `.gitignore` 中加入忽略规则，避免 API Key 等敏感信息误入库。
 - 已按运行诉求将统一成功业务码回切为 `code = 200`：后端 `respondSuccess` 使用 `http.StatusOK` 作为 code，前端拦截器同步恢复 `code === 200` 判定。
 - 已完成后端配置化改造：新增 `configs/app.yaml` 与 `internal/config` 配置加载模块，移除 `cmd/server/main.go` 中 DSN 与端口硬编码。
 - 启动入口支持通过 `APP_CONFIG_PATH` 指定外部配置文件路径，便于多环境部署。
 - 数据库连接改为通过 `internal/infrastructure/database.NewPostgresDB` 注入配置，支持 `sslmode/timezone` 配置项。
 - 新增配置加载单测 `internal/config/app_config_test.go`，覆盖默认值、环境变量覆盖与 API Key 必填校验。
 - 已确认并删除废弃页面文件：`web/src/views/agents/AgentCreateView.vue`、`web/src/views/rag/IngestView.vue`，并清理遗留的 `web/src/views/rag/IngestView.vue.js`。
-- 前端 API 响应语义已与后端约定统一：成功判定改为 `code = 0`（`web/src/api/http.ts` 与 `web/src/api/http.js` 同步更新）。
 
 ## 2026-03-09
 

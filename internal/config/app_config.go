@@ -15,6 +15,7 @@ type AppConfig struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	LLM      LLMConfig      `yaml:"llm"`
+	Security SecurityConfig `yaml:"security"`
 }
 
 type ServerConfig struct {
@@ -37,6 +38,12 @@ type LLMConfig struct {
 	BaseURL    string `yaml:"base_url"`
 	ChatModel  string `yaml:"chat_model"`
 	EmbedModel string `yaml:"embed_model"`
+}
+
+type SecurityConfig struct {
+	AdminToken         string `yaml:"admin_token"`
+	RateLimitPerMinute int    `yaml:"rate_limit_per_minute"`
+	AuditQueueSize     int    `yaml:"audit_queue_size"`
 }
 
 func Load(path string) (AppConfig, error) {
@@ -99,6 +106,15 @@ func applyDefaults(cfg *AppConfig) {
 	if strings.TrimSpace(cfg.LLM.EmbedModel) == "" {
 		cfg.LLM.EmbedModel = "embedding-3"
 	}
+	if strings.TrimSpace(cfg.Security.AdminToken) == "" {
+		cfg.Security.AdminToken = "flexirag-secret-123"
+	}
+	if cfg.Security.RateLimitPerMinute <= 0 {
+		cfg.Security.RateLimitPerMinute = 60
+	}
+	if cfg.Security.AuditQueueSize <= 0 {
+		cfg.Security.AuditQueueSize = 1024
+	}
 }
 
 func overrideByEnv(cfg *AppConfig) {
@@ -115,6 +131,9 @@ func overrideByEnv(cfg *AppConfig) {
 	overrideString(&cfg.LLM.BaseURL, "LLM_BASE_URL")
 	overrideString(&cfg.LLM.ChatModel, "LLM_CHAT_MODEL")
 	overrideString(&cfg.LLM.EmbedModel, "LLM_EMBED_MODEL")
+	overrideString(&cfg.Security.AdminToken, "ADMIN_TOKEN")
+	overrideInt(&cfg.Security.RateLimitPerMinute, "RATE_LIMIT_PER_MINUTE")
+	overrideInt(&cfg.Security.AuditQueueSize, "AUDIT_QUEUE_SIZE")
 }
 
 func overrideString(dst *string, key string) {
@@ -141,6 +160,15 @@ func validate(cfg AppConfig) error {
 	}
 	if strings.TrimSpace(cfg.LLM.APIKey) == "" {
 		return fmt.Errorf("配置无效: LLM API Key 不能为空，请在配置文件 llm.api_key 或环境变量 OPENAI_API_KEY 中设置")
+	}
+	if strings.TrimSpace(cfg.Security.AdminToken) == "" {
+		return fmt.Errorf("配置无效: security.admin_token 不能为空")
+	}
+	if cfg.Security.RateLimitPerMinute <= 0 {
+		return fmt.Errorf("配置无效: security.rate_limit_per_minute 必须大于 0")
+	}
+	if cfg.Security.AuditQueueSize <= 0 {
+		return fmt.Errorf("配置无效: security.audit_queue_size 必须大于 0")
 	}
 	return nil
 }

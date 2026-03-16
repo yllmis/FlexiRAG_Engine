@@ -57,6 +57,11 @@ llm:
   base_url: https://open.bigmodel.cn/api/paas/v4/
   chat_model: glm-4-flash
   embed_model: embedding-3
+
+security:
+  admin_token: ""
+  rate_limit_per_minute: 120
+  audit_queue_size: 1024
 ```
 
 环境变量可覆盖配置文件：
@@ -65,6 +70,7 @@ llm:
 - `SERVER_PORT`
 - `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SSLMODE` `DB_TIMEZONE`
 - `OPENAI_API_KEY` `LLM_PROVIDER` `LLM_BASE_URL` `LLM_CHAT_MODEL` `LLM_EMBED_MODEL`
+- `ADMIN_TOKEN` `RATE_LIMIT_PER_MINUTE` `AUDIT_QUEUE_SIZE`
 
 ## 快速开始
 
@@ -223,8 +229,26 @@ docker compose up -d
 
 ## 当前限制（MVP）
 
-- 尚未引入完整鉴权、限流、审计日志
-- 尚未接入生产级向量索引参数调优（如 HNSW/IVFFlat）
+- 当前为 P0 安全基线：
+  - 鉴权采用静态 Bearer Token（`security.admin_token` / `ADMIN_TOKEN`）
+  - 限流采用单机内存分钟窗口限流（按 token/IP）
+  - 审计采用异步写入（有界队列 + 队列满降级 + 丢弃/失败计数）
+- 未完成项：
+  - 动态发牌与权限模型（RBAC/多角色）
+  - 分布式限流（Redis）
+  - 生产级审计管道（SIEM/告警平台）
+  - 生产级向量索引参数调优（如 HNSW/IVFFlat）
+
+## 为什么 P0 先用静态 Token
+
+本项目当前阶段优先目标是“尽快建立可执行的最小安全闭环”，而不是一次性完成完整 IAM。
+
+- 成本可控：无需先引入登录系统、用户中心、密钥签发与刷新机制。
+- 风险可控：先把“写接口必须带凭证”落地，立刻阻断匿名写入。
+- 便于联调：前后端都能快速验证 `401/429` 行为，先收敛主链路稳定性。
+- 易于演进：后续替换为 JWT/API Key 时，中间件与 Port 边界可复用，变更集中在发牌与校验实现层。
+
+这是一种分阶段实施策略：P0 先完成“可防护”，P1/P2 再升级到“可运营、可治理”。
 
 ## 下一步建议
 

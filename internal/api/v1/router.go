@@ -1,21 +1,30 @@
 package v1
 
-import "github.com/gin-gonic/gin"
+import (
+	"flexirag-engine/internal/api/v1/middlewares"
+	"flexirag-engine/internal/core"
+
+	"github.com/gin-gonic/gin"
+)
 
 // SetupRouter 注册所有的 V1 API 路由
-func SetupRouter(r *gin.Engine, h *Handler) {
+func SetupRouter(r *gin.Engine, h *Handler, authService core.AuthService, limiter core.RateLimiter) {
+	r.Use(middlewares.RequestID())
 	r.GET("/ping", h.Ping)
 
 	apiV1 := r.Group("/api/v1")
 	{
-		apiV1.POST("/agents", h.CreateAgent)
 		apiV1.GET("/agents", h.ListAgents)
-		apiV1.PUT("/agents/:id", h.UpdateAgent)
-		apiV1.POST("/chat", h.Chat)
-		apiV1.POST("/knowledge/ingest", h.IngestKnowledge)
+
+		protected := apiV1.Group("")
+		protected.Use(middlewares.Auth(authService), middlewares.RateLimit(limiter))
+		protected.POST("/agents", h.CreateAgent)
+		protected.PUT("/agents/:id", h.UpdateAgent)
+		protected.POST("/chat", h.Chat)
+		protected.POST("/knowledge/ingest", h.IngestKnowledge)
 	}
 }
 
-func RegisterRoutes(r *gin.Engine, h *Handler) {
-	SetupRouter(r, h)
+func RegisterRoutes(r *gin.Engine, h *Handler, authService core.AuthService, limiter core.RateLimiter) {
+	SetupRouter(r, h, authService, limiter)
 }

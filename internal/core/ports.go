@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"flexirag-engine/internal/core/agent_mgmt"
+	"time"
 )
 
 // ==========================================
@@ -20,6 +21,23 @@ type SearchResult struct {
 	ID      string  `json:"id"`
 	Content string  `json:"content"` // 搜到的具体文本
 	Score   float32 `json:"score"`   // 相似度 (0.0 - 1.0)
+}
+
+// Subject 代表鉴权后的调用主体
+type Subject struct {
+	ID string `json:"id"`
+}
+
+// AuditEvent 代表一条审计事件
+type AuditEvent struct {
+	EventType    string    `json:"event_type"`
+	SubjectID    string    `json:"subject_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   string    `json:"resource_id"`
+	RequestID    string    `json:"request_id"`
+	Status       string    `json:"status"`
+	Message      string    `json:"message"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // ==========================================
@@ -62,4 +80,24 @@ type AgentRepository interface {
 	List(ctx context.Context) ([]agent_mgmt.Agent, error)
 
 	Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
+}
+
+// AuthService 定义鉴权服务标准
+type AuthService interface {
+	ValidateToken(ctx context.Context, token string) (*Subject, error)
+}
+
+// RateLimiter 定义限流器标准
+type RateLimiter interface {
+	Allow(key string) bool
+}
+
+// AuditRepository 定义审计落库标准
+type AuditRepository interface {
+	Save(ctx context.Context, event AuditEvent) error
+}
+
+// AuditLogger 定义审计记录器标准
+type AuditLogger interface {
+	Log(event AuditEvent)
 }

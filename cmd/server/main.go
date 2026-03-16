@@ -10,8 +10,11 @@ import (
 	"flexirag-engine/internal/config"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
+	"flexirag-engine/internal/infrastructure/audit"
+	"flexirag-engine/internal/infrastructure/auth"
 	"flexirag-engine/internal/infrastructure/database"
 	"flexirag-engine/internal/infrastructure/llm"
+	"flexirag-engine/internal/infrastructure/ratelimit"
 	"flexirag-engine/internal/infrastructure/repository"
 	"flexirag-engine/internal/infrastructure/vector"
 
@@ -53,13 +56,20 @@ func main() {
 	if err != nil {
 		log.Fatal("初始化 Agent 仓储失败: ", err)
 	}
+	auditRepo, err := repository.NewPGAuditRepo(db)
+	if err != nil {
+		log.Fatal("初始化审计仓储失败: ", err)
+	}
 
 	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore)
 	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
+	auditLogger := audit.NewAsyncWriter(auditRepo, cfg.Security.AuditQueueSize)
+	authService := auth.NewStaticTokenAuth(cfg.Security.AdminToken)
+	rateLimiter := ratelimit.NewInMemoryRateLimiter(cfg.Security.RateLimitPerMinute)
 
 	r := gin.Default()
-	handler := apiV1.NewHandler(agentEngine, chunkService, agentRepo)
-	apiV1.RegisterRoutes(r, handler)
+	handler := apiV1.NewHandler(agentEngine, chunkService, agentRepo, auditLogger)
+	apiV1.RegisterRoutes(r, handler, authService, rateLimiter)
 
 	addr := ":" + strconv.Itoa(cfg.Server.Port)
 	fmt.Printf("🚀 FlexiRAG Engine 启动成功！监听端口 %s\n", addr)
