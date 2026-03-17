@@ -1,73 +1,54 @@
 # FlexiRAG Engine
 
-一个基于 Go 构建的多租户 RAG Agent 引擎，当前已具备可运行的 v1.1：
-- 支持长文本自动切片、向量化、持久化到 PostgreSQL（pgvector）
+一个基于 Go 构建的多租户私有化 RAG Agent 引擎，当前版本已具备完整后端 API + 前端控制台闭环能力：
+- 支持长文本自动切片（Chunking）与 Overlap 重叠分片
+- 支持 Embedding 向量化并持久化到 PostgreSQL（pgvector）
 - 支持按 `agent_id` 隔离的知识检索与问答
-- 支持 GLM（OpenAI 兼容模式）对话与 Embedding
-- 支持 Agent 创建、花名册查询、系统提示词更新
+- 支持 Agent 创建、查询、更新、删除
+- 支持静态 Token 鉴权、按主体/IP 限流、异步审计
 - 支持 `web/` 前端控制台（Vue 3 + Vite + TypeScript + Tailwind）
 
-## v1.1 功能范围
+## 功能清单
 
-- 健康检查：`GET /ping`
-- 创建 Agent：`POST /api/v1/agents`
-- Agent 花名册：`GET /api/v1/agents`
-- 更新 Agent：`PUT /api/v1/agents/:id`
-- 删除 Agent：`DELETE /api/v1/agents/:id`
-- 知识摄入：`POST /api/v1/knowledge/ingest`
-- 问答接口：`POST /api/v1/chat`
-- 向量存储：`PGVectorStore`（PostgreSQL + pgvector）
+- 健康检查：`GET /ping`（公开）
+- Agent 花名册：`GET /api/v1/agents`（公开）
+- 创建 Agent：`POST /api/v1/agents`（需鉴权）
+- 更新 Agent：`PUT /api/v1/agents/:id`（需鉴权）
+- 删除 Agent：`DELETE /api/v1/agents/:id`（需鉴权）
+- 知识摄入：`POST /api/v1/knowledge/ingest`（需鉴权）
+- 问答接口：`POST /api/v1/chat`（需鉴权）
 
-## 目录结构（核心）
+## 核心目录
 
 - `cmd/server`：HTTP 服务入口
+- `internal/api/v1`：路由、处理器、中间件（Auth/RateLimit/RequestID）
+- `internal/core`：领域模型与 Port 接口定义
+- `internal/engine`：RAG 问答执行引擎
 - `internal/core/knowledge`：长文本切片与知识摄入编排
-- `internal/core/agent_mgmt`：Agent 领域模型
-- `internal/engine`：RAG 问答执行器
-- `internal/infrastructure/llm`：GLM/OpenAI 客户端适配
-- `internal/infrastructure/vector`：向量存储实现（Mock / pgvector）
-- `pkg/textsplit`：通用文本切片工具
+- `internal/infrastructure/llm`：GLM/OpenAI 兼容客户端
+- `internal/infrastructure/vector`：向量存储实现（Mock/pgvector）
+- `internal/infrastructure/ratelimit`：基于 `golang.org/x/time/rate` 的限流器
+- `internal/infrastructure/audit`：异步审计写入
 - `web`：前端控制台工程（Vite）
 
 ## 运行环境
 
-- Go `1.23+`
+- Go `1.25.0+`
+- Node.js `18+`（前端开发）
 - Docker / Docker Compose（用于 PostgreSQL + pgvector）
-- GLM API Key（当前读取环境变量名：`OPENAI_API_KEY`）
+- GLM/OpenAI 兼容 API Key（环境变量：`OPENAI_API_KEY`）
 
-## 配置文件
+## 配置说明
 
-服务默认从 `configs/app.yaml` 读取运行配置：
+服务默认读取 `configs/app.yaml`，也可通过 `APP_CONFIG_PATH` 指向其他配置文件（如 `configs/app.local.yaml`）。
 
-```yaml
-server:
-  port: 8080
-
-database:
-  host: 127.0.0.1
-  port: 5432
-  user: root
-  password: 12345
-  dbname: flexirag_db
-  sslmode: disable
-  timezone: Asia/Shanghai
-
-llm:
-  provider: glm
-  api_key: ""
-  base_url: https://open.bigmodel.cn/api/paas/v4/
-  chat_model: glm-4-flash
-  embed_model: embedding-3
-
-security:
-  admin_token: ""
-  rate_limit_per_minute: 120
-  audit_queue_size: 1024
-```
+关键配置项：
+- `security.admin_token`：后端静态鉴权 Token
+- `security.rate_limit_per_minute`：每分钟限流额度（默认 60）
+- `security.audit_queue_size`：异步审计队列大小（默认 1024）
 
 环境变量可覆盖配置文件：
-
-- `APP_CONFIG_PATH`（可选，默认 `configs/app.yaml`）
+- `APP_CONFIG_PATH`（默认 `configs/app.yaml`）
 - `SERVER_PORT`
 - `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SSLMODE` `DB_TIMEZONE`
 - `OPENAI_API_KEY` `LLM_PROVIDER` `LLM_BASE_URL` `LLM_CHAT_MODEL` `LLM_EMBED_MODEL`
@@ -82,30 +63,24 @@ docker compose up -d postgres
 docker compose exec -T postgres psql -U root -d flexirag_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-默认连接信息（见 `docker-compose.yml`）：
-- Host: `localhost`
-- Port: `5432`
-- User: `root`
-- Password: `12345`
-- DB: `flexirag_db`
+### 2. 配置 LLM Key
 
-### 2. 设置 API Key
+在[配置文件](configs/app.yaml)中写入`api_key: ""`,可以自行调换模型，目前支持glm和openai
+
+### 3. 启动后端
 
 ```bash
-export OPENAI_API_KEY="你的GLM_API_KEY"
+APP_CONFIG_PATH=configs/app.local.yaml go run ./cmd/server/main.go
 ```
 
-### 3. 启动服务
-
-```bash
-go run ./cmd/server/main.go
-```
-
-### 4. 启动前端（可选）
+### 4. 启动前端
 
 ```bash
 cd web
 npm install
+cat > .env.local <<'EOF'
+VITE_ADMIN_TOKEN=flexirag-secret-123
+EOF
 npm run dev
 ```
 
@@ -113,9 +88,9 @@ npm run dev
 
 说明：前端通过 `web/vite.config.ts` 代理 `/api` 与 `/ping` 到后端 `http://127.0.0.1:8080`，本地联调无需后端开启 CORS。
 
-## 统一响应体
+## 统一响应格式
 
-当前后端接口统一返回结构：
+所有接口统一返回：
 
 ```json
 {
@@ -126,33 +101,28 @@ npm run dev
 ```
 
 - 成功：`code = 200`
-- 失败：`code = 4xx/5xx`，错误信息在 `msg`
-- 业务数据统一放在 `data`
+- 失败：`code = 4xx/5xx`
+- 业务数据：统一放在 `data`
 
 ## API 示例
 
-### 健康检查
+### 健康检查（公开）
 
 ```bash
 curl -s http://127.0.0.1:8080/ping
 ```
 
-示例响应：
+### 查询 Agent 花名册（公开）
 
-```json
-{
-  "code": 200,
-  "msg": "success",
-  "data": {
-    "message": "pong"
-  }
-}
+```bash
+curl -s http://127.0.0.1:8080/api/v1/agents
 ```
 
-### 创建 Agent
+### 创建 Agent（鉴权）
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/agents \
+  -H "Authorization: Bearer flexirag-secret-123" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "教务小助手",
@@ -160,40 +130,29 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/agents \
   }'
 ```
 
-示例响应：
-
-```json
-{
-  "code": 200,
-  "msg": "success",
-  "data": {
-    "agent_id": 1,
-    "name": "教务小助手",
-    "system_prompt": "你是一个严谨的教务助理，请仅依据上下文回答。"
-  }
-}
-```
-
-### 查询 Agent 花名册
-
-```bash
-curl -s http://127.0.0.1:8080/api/v1/agents
-```
-
-### 更新 Agent
+### 更新 Agent（鉴权）
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8080/api/v1/agents/1 \
+  -H "Authorization: Bearer flexirag-secret-123" \
   -H "Content-Type: application/json" \
   -d '{"name":"教务升级版助手","system_prompt":"你是资深教务顾问，回答需简洁准确。"}'
 ```
 
-说明：`name` 与 `system_prompt` 都是可选字段，但至少传一个。
+说明：`name` 与 `system_prompt` 均为可选，但至少提供一个。
 
-### 长文本摄入（自动切片）
+### 删除 Agent（鉴权）
+
+```bash
+curl -s -X DELETE http://127.0.0.1:8080/api/v1/agents/1 \
+  -H "Authorization: Bearer flexirag-secret-123"
+```
+
+### 长文本摄入（鉴权）
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/knowledge/ingest \
+  -H "Authorization: Bearer flexirag-secret-123" \
   -H "Content-Type: application/json" \
   -d '{
     "agent_id": 1,
@@ -203,56 +162,52 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/knowledge/ingest \
   }'
 ```
 
-### 问答
+### 问答（鉴权）
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/v1/chat \
+  -H "Authorization: Bearer flexirag-secret-123" \
   -H "Content-Type: application/json" \
   -d '{"agent_id":1,"query":"四六级报名时间是什么时候？"}'
 ```
 
-注意：`chat` 和 `knowledge/ingest` 现在都要求显式传入 `agent_id`，不再自动兜底到默认 Agent。
+注意：`chat` 与 `knowledge/ingest` 都要求显式传入 `agent_id`。
+
+## 安全与稳定性基线
+
+当前采用 P0 安全基线：
+- 鉴权：静态 Bearer Token（`security.admin_token` / `ADMIN_TOKEN`）
+- 限流：基于 `golang.org/x/time/rate` 的单机内存限流（按 token/IP）
+- 审计：异步写入（有界队列 + 队列满降级策略）
+
+已知后续演进方向：
+- 动态发牌与权限模型（JWT/API Key + RBAC）
+- 分布式限流（Redis）
+- 生产级审计接入（SIEM/告警平台）
 
 ## 常见问题
 
-### `password authentication failed for user "root"`
+### 1) `401 未授权，请检查 Bearer Token`
 
-这通常不是代码问题，而是数据库密码与容器初始化状态不一致：
-- 确认服务实际连接参数与 `docker-compose.yml` 一致
-- 如果你曾改过账号密码，旧数据卷可能仍保留旧凭据
+检查以下两点：
+- 后端 `security.admin_token` 与前端 `web/.env.local` 中 `VITE_ADMIN_TOKEN` 是否一致
+- 修改 `.env.local` 后是否重启了 `npm run dev`
 
-可重建（会清空数据库数据）：
+### 2) `password authentication failed for user "root"`
+
+这通常是数据库容器初始化凭据与当前配置不一致：
+- 确认连接参数与 `docker-compose.yml` 一致
+- 若历史数据卷残留旧密码，可重建（会清空数据库）
 
 ```bash
 docker compose down -v
 docker compose up -d
 ```
 
-## 当前限制（MVP）
+## 测试
 
-- 当前为 P0 安全基线：
-  - 鉴权采用静态 Bearer Token（`security.admin_token` / `ADMIN_TOKEN`）
-  - 限流采用单机内存分钟窗口限流（按 token/IP）
-  - 审计采用异步写入（有界队列 + 队列满降级 + 丢弃/失败计数）
-- 未完成项：
-  - 动态发牌与权限模型（RBAC/多角色）
-  - 分布式限流（Redis）
-  - 生产级审计管道（SIEM/告警平台）
-  - 生产级向量索引参数调优（如 HNSW/IVFFlat）
+后端回归测试：
 
-## 为什么 P0 先用静态 Token
-
-本项目当前阶段优先目标是“尽快建立可执行的最小安全闭环”，而不是一次性完成完整 IAM。
-
-- 成本可控：无需先引入登录系统、用户中心、密钥签发与刷新机制。
-- 风险可控：先把“写接口必须带凭证”落地，立刻阻断匿名写入。
-- 便于联调：前后端都能快速验证 `401/429` 行为，先收敛主链路稳定性。
-- 易于演进：后续替换为 JWT/API Key 时，中间件与 Port 边界可复用，变更集中在发牌与校验实现层。
-
-这是一种分阶段实施策略：P0 先完成“可防护”，P1/P2 再升级到“可运营、可治理”。
-
-## 下一步建议
-
-- 配置化：将 DSN、模型名、超时等统一放入配置文件/环境变量
-- 观测性：增加结构化日志与请求追踪
-- 数据治理：完善 `agent_id` + `id` 复合唯一约束与迁移脚本
+```bash
+go test ./...
+```
