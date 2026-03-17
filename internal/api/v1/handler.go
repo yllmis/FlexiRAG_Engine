@@ -295,3 +295,31 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		"system_prompt": agent.SystemPrompt,
 	})
 }
+
+func (h *Handler) DeleteAgent(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || idVal == 0 {
+		h.audit(c, "agent_delete", "agent", c.Param("id"), "failed", "Agent ID 非法")
+		respondError(c, http.StatusBadRequest, "无效的 Agent ID")
+		return
+	}
+
+	ok, err := h.agentRepo.Delete(c.Request.Context(), uint(idVal))
+	if err != nil {
+		log.Printf("删除 Agent 失败: %v\n", err)
+		h.audit(c, "agent_delete", "agent", strconv.FormatUint(idVal, 10), "failed", "删除 Agent 失败")
+		respondError(c, http.StatusInternalServerError, "删除 Agent 失败")
+		return
+	}
+	if !ok {
+		h.audit(c, "agent_delete", "agent", strconv.FormatUint(idVal, 10), "failed", "Agent 不存在")
+		respondError(c, http.StatusNotFound, "Agent 不存在")
+		return
+	}
+
+	h.audit(c, "agent_delete", "agent", strconv.FormatUint(idVal, 10), "success", "删除 Agent 成功")
+	respondSuccess(c, gin.H{
+		"agent_id": idVal,
+		"deleted":  true,
+	})
+}

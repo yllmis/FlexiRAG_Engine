@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { createAgent, updateAgent } from "../../api/agents";
+import { createAgent, deleteAgent, updateAgent } from "../../api/agents";
 import { ingest } from "../../api/rag";
 import { useAgentStore } from "../../stores/agent";
 import type { Agent } from "../../types/agent";
@@ -10,6 +10,18 @@ const store = useAgentStore();
 const route = useRoute();
 const router = useRouter();
 const fileInput = ref<HTMLInputElement | null>(null);
+const selectedAgentIds = ref<number[]>([]);
+
+const perfAgentIds = computed(() =>
+  store.agents
+    .filter((agent) => agent.name.toLowerCase().startsWith("perf-agent"))
+    .map((agent) => resolveAgentId(agent))
+    .filter((id) => id > 0)
+);
+
+const allSelected = computed(
+  () => store.agents.length > 0 && selectedAgentIds.value.length === store.agents.length
+);
 
 const drawerState = reactive({
   open: false,
@@ -42,6 +54,7 @@ const selectedAgent = computed(() =>
 
 onMounted(async () => {
   await store.fetchAgents();
+  cleanupSelectedIds();
   if (store.selectedAgentId > 0) {
     knowledgeState.agent_id = store.selectedAgentId;
   }
@@ -64,6 +77,14 @@ watch(
   }
 );
 
+watch(
+  () => store.agents,
+  () => {
+    cleanupSelectedIds();
+  },
+  { deep: true }
+);
+
 function resolveAgentId(agent: Agent) {
   return Number(agent.agent_id || agent.id || 0);
 }
@@ -80,6 +101,82 @@ function syncKnowledgeTarget(agent: Agent) {
   store.selectAgent(agentId);
   knowledgeState.agent_id = agentId;
   document.getElementById("knowledge")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function isSelected(agent: Agent) {
+  return selectedAgentIds.value.includes(resolveAgentId(agent));
+}
+
+function toggleAgentSelection(agent: Agent, checked: boolean) {
+  const id = resolveAgentId(agent);
+  if (id <= 0) {
+    return;
+  }
+  if (checked) {
+    if (!selectedAgentIds.value.includes(id)) {
+      selectedAgentIds.value = [...selectedAgentIds.value, id];
+    }
+    return;
+  }
+  selectedAgentIds.value = selectedAgentIds.value.filter((item) => item !== id);
+}
+
+function toggleSelectAll(checked: boolean) {
+  if (!checked) {
+    selectedAgentIds.value = [];
+    return;
+  }
+  selectedAgentIds.value = store.agents.map((agent) => resolveAgentId(agent)).filter((id) => id > 0);
+}
+
+function selectPerfAgents() {
+  selectedAgentIds.value = [...perfAgentIds.value];
+  if (selectedAgentIds.value.length === 0) {
+    knowledgeState.error = "当前没有可批量删除的 perf-agent";
+  }
+}
+
+function cleanupSelectedIds() {
+  const validIds = new Set(store.agents.map((agent) => resolveAgentId(agent)).filter((id) => id > 0));
+  selectedAgentIds.value = selectedAgentIds.value.filter((id) => validIds.has(id));
+}
+
+async function batchRemoveSelectedAgents() {
+  if (selectedAgentIds.value.length === 0) {
+    knowledgeState.error = "请先勾选要删除的 Agent";
+    return;
+  }
+  const ok = window.confirm(`确认批量删除 ${selectedAgentIds.value.length} 个 Agent 吗？`);
+  if (!ok) {
+    return;
+  }
+
+  knowledgeState.error = "";
+  knowledgeState.success = "";
+  const targets = [...selectedAgentIds.value];
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (const id of targets) {
+    try {
+      await deleteAgent(id);
+      successCount++;
+      if (knowledgeState.agent_id === id) {
+        knowledgeState.agent_id = 0;
+      }
+    } catch {
+      failedCount++;
+    }
+  }
+
+  await store.fetchAgents();
+  cleanupSelectedIds();
+
+  if (failedCount > 0) {
+    knowledgeState.error = `批量删除完成：成功 ${successCount}，失败 ${failedCount}`;
+    return;
+  }
+  knowledgeState.success = `批量删除完成：成功 ${successCount} 个 Agent`;
 }
 
 function openCreateDrawer() {
@@ -156,6 +253,7 @@ async function submitDrawer() {
     if (store.selectedAgentId > 0 && !knowledgeState.agent_id) {
       knowledgeState.agent_id = store.selectedAgentId;
     }
+    cleanupSelectedIds();
     window.setTimeout(() => {
       closeDrawer();
     }, 500);
@@ -163,6 +261,28 @@ async function submitDrawer() {
     drawerState.error = err?.message || (drawerState.mode === "create" ? "创建失败" : "更新失败");
   } finally {
     drawerState.busy = false;
+  }
+}
+
+async function removeAgent(agent: Agent) {
+  const id = resolveAgentId(agent);
+  if (id <= 0) {
+    return;
+  }
+  const ok = window.confirm(`确认删除 Agent #${id}（${agent.name}）吗？`);
+  if (!ok) {
+    return;
+  }
+  try {
+    await deleteAgent(id);
+    if (knowledgeState.agent_id === id) {
+      knowledgeState.agent_id = 0;
+    }
+    await store.fetchAgents();
+    cleanupSelectedIds();
+    knowledgeState.success = `已删除 Agent #${id}`;
+  } catch (err: any) {
+    knowledgeState.error = err?.message || "删除 Agent 失败";
   }
 }
 
@@ -238,8 +358,22 @@ async function submitKnowledge() {
           </div>
           <div class="flex gap-2">
             <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700" @click="store.fetchAgents()">刷新列表</button>
+            <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700" @click="selectPerfAgents()">选中 perf-agent</button>
+            <button
+              class="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              :disabled="selectedAgentIds.length === 0"
+              @click="batchRemoveSelectedAgents()"
+            >
+              批量删除（{{ selectedAgentIds.length }}）
+            </button>
             <button class="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white" @click="openCreateDrawer()">创建 Agent</button>
           </div>
+        </div>
+
+        <div class="mt-4 flex items-center gap-3 text-sm text-slate-600">
+          <input id="select-all-agents" :checked="allSelected" type="checkbox" class="h-4 w-4" @change="toggleSelectAll(($event.target as HTMLInputElement).checked)" />
+          <label for="select-all-agents" class="cursor-pointer">全选当前列表</label>
+          <span>已选 {{ selectedAgentIds.length }} / {{ store.agents.length }}</span>
         </div>
 
         <div v-if="store.loading" class="py-12 text-center text-sm text-slate-500">Agent 加载中...</div>
@@ -252,12 +386,20 @@ async function submitKnowledge() {
           >
             <div class="flex items-start justify-between gap-3">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Agent #{{ resolveAgentId(agent) }}</p>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+                  <input :checked="isSelected(agent)" type="checkbox" class="h-4 w-4" @change="toggleAgentSelection(agent, ($event.target as HTMLInputElement).checked)" />
+                  选择
+                </label>
                 <h3 class="mt-2 text-xl font-semibold text-slate-950">{{ agent.name }}</h3>
               </div>
-              <button class="rounded-full bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white" @click="openEditDrawer(agent)">
-                修改提示词
-              </button>
+              <div class="flex items-center gap-2">
+                <button class="rounded-full bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white" @click="openEditDrawer(agent)">
+                  修改提示词
+                </button>
+                <button class="rounded-full bg-rose-600 px-3 py-1.5 text-sm font-medium text-white" @click="removeAgent(agent)">
+                  删除
+                </button>
+              </div>
             </div>
 
             <p class="mt-4 flex-1 text-sm leading-7 text-slate-600">{{ promptSummary(agent.system_prompt) }}</p>
@@ -349,7 +491,7 @@ async function submitKnowledge() {
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.26em] text-slate-400">Drawer</p>
             <h2 class="mt-2 text-2xl font-semibold text-slate-950">
-              {{ drawerState.mode === 'create' ? '创建 Agent' : `编辑 Agent #${drawerState.targetId}` }}
+              {{ drawerState.mode === 'create' ? '创建 Agent' : '编辑 Agent' }}
             </h2>
             <p class="mt-2 text-sm leading-6 text-slate-500">
               {{ drawerState.mode === 'create' ? '从右侧抽屉快速创建新智能体。' : '修改名称和系统提示词，立即影响问答体验。' }}

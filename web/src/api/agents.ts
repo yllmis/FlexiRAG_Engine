@@ -16,3 +16,8 @@ export async function updateAgent(id: number, payload: UpdateAgentReq): Promise<
   const { data } = await http.put<ApiResponse<Agent>>(`/api/v1/agents/${id}`, payload);
   return data.data;
 }
+
+export async function deleteAgent(id: number): Promise<{ agent_id: number; deleted: boolean }> {
+  const { data } = await http.delete<ApiResponse<{ agent_id: number; deleted: boolean }>>(`/api/v1/agents/${id}`);
+  return data.data;
+}

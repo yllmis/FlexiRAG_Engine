@@ -74,3 +74,11 @@ func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *s
 
 	return r.GetByID(ctx, id)
 }
+
+func (r *PGAgentRepo) Delete(ctx context.Context, id uint) (bool, error) {
+	result := r.db.WithContext(ctx).Delete(&agent_mgmt.Agent{}, id)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}

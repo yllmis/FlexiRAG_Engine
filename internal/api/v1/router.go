@@ -20,6 +20,7 @@ func SetupRouter(r *gin.Engine, h *Handler, authService core.AuthService, limite
 		protected.Use(middlewares.Auth(authService), middlewares.RateLimit(limiter))
 		protected.POST("/agents", h.CreateAgent)
 		protected.PUT("/agents/:id", h.UpdateAgent)
+		protected.DELETE("/agents/:id", h.DeleteAgent)
 		protected.POST("/chat", h.Chat)
 		protected.POST("/knowledge/ingest", h.IngestKnowledge)
 	}

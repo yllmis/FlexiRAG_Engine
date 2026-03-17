@@ -80,6 +80,8 @@ type AgentRepository interface {
 	List(ctx context.Context) ([]agent_mgmt.Agent, error)
 
 	Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
+
+	Delete(ctx context.Context, id uint) (bool, error)
 }
 
 // AuthService 定义鉴权服务标准

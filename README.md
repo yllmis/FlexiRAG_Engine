@@ -13,6 +13,7 @@
 - 创建 Agent：`POST /api/v1/agents`
 - Agent 花名册：`GET /api/v1/agents`
 - 更新 Agent：`PUT /api/v1/agents/:id`
+- 删除 Agent：`DELETE /api/v1/agents/:id`
 - 知识摄入：`POST /api/v1/knowledge/ingest`
 - 问答接口：`POST /api/v1/chat`
 - 向量存储：`PGVectorStore`（PostgreSQL + pgvector）

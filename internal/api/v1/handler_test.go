@@ -25,6 +25,7 @@ type mockAgentRepo struct {
 	getByIDFn func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
 	listFn    func(ctx context.Context) ([]agent_mgmt.Agent, error)
 	updateFn  func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
+	deleteFn  func(ctx context.Context, id uint) (bool, error)
 }
 
 func (m *mockAgentRepo) Create(ctx context.Context, agent *agent_mgmt.Agent) error {
@@ -53,6 +54,13 @@ func (m *mockAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt 
 		return m.updateFn(ctx, id, name, systemPrompt)
 	}
 	return nil, nil
+}
+
+func (m *mockAgentRepo) Delete(ctx context.Context, id uint) (bool, error) {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, id)
+	}
+	return false, nil
 }
 
 func TestUpdateAgent_Success(t *testing.T) {
@@ -274,5 +282,62 @@ func TestListAgents_RepoError(t *testing.T) {
 	}
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("期望业务码 500，实际 %d", resp.Code)
+	}
+}
+
+func TestDeleteAgent_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := NewHandler(nil, nil, &mockAgentRepo{
+		deleteFn: func(ctx context.Context, id uint) (bool, error) {
+			return id == 1, nil
+		},
+	})
+
+	r := gin.New()
+	r.DELETE("/api/v1/agents/:id", h.DeleteAgent)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望状态码 200，实际 %d，响应：%s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteAgent_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := NewHandler(nil, nil, &mockAgentRepo{})
+	r := gin.New()
+	r.DELETE("/api/v1/agents/:id", h.DeleteAgent)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/abc", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望状态码 400，实际 %d，响应：%s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteAgent_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := NewHandler(nil, nil, &mockAgentRepo{
+		deleteFn: func(ctx context.Context, id uint) (bool, error) {
+			return false, nil
+		},
+	})
+	r := gin.New()
+	r.DELETE("/api/v1/agents/:id", h.DeleteAgent)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/100", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望状态码 404，实际 %d，响应：%s", w.Code, w.Body.String())
 	}
 }
