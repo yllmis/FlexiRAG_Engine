@@ -2,6 +2,13 @@
 
 本文档用于记录项目阶段性变更，便于新开窗口后快速了解当前状态与开发进度。
 
+## 2026-04-30
+
+- 已新增多 Agent 审核与检索编排方案文档：`docs/architecture/multi_agent_review_retrieval_plan_v1.md`。
+- 已明确项目下一阶段主线：优先演进为“多 Agent 审核 + 查询理解 + Hybrid Retrieval + RRF 融合”的 Agent-RAG 系统，而不是继续仅做普通单路向量检索问答。
+- 方案文档中已补充半个月可执行学习路线：包含项目现状梳理、RAG 编排基础、审核 Agent 基础、查询改写、双路检索、融合排序、测试与文档包装。
+- 已明确首期最推荐交付组合：输入审核 Agent、查询改写 Agent、Dense + Sparse 检索、RRF 融合、引用结果返回。
+
 ## 2026-03-17
 
 - 新增 Agent 删除能力：后端新增 `DELETE /api/v1/agents/:id`（鉴权+限流保护），前端 Agent 卡片增加删除按钮与二次确认。
