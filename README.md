@@ -22,7 +22,9 @@
 
 - `cmd/server`：HTTP 服务入口
 - `internal/api/v1`：路由、处理器、中间件（Auth/RateLimit/RequestID）
-- `internal/core`：领域模型与 Port 接口定义
+- `internal/core`：领域模型（`models.go`）与子领域包（`agent_mgmt`、`knowledge`）
+- `internal/core/ports`：端口接口定义（LLM、Vector、Agent、Auth、Audit、RateLimiter）
+- `internal/config`：配置加载（YAML + 环境变量覆盖 + 校验）
 - `internal/engine`：RAG 问答执行引擎
 - `internal/core/knowledge`：长文本切片与知识摄入编排
 - `internal/infrastructure/llm`：GLM/OpenAI 兼容客户端
