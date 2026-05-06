@@ -4,17 +4,18 @@ import (
 	"context"
 	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/ports"
 
 	"fmt"
 	"strings"
 )
 
 type AgentEngine struct {
-	llm    core.LLMProvider
-	vector core.VectorStore
+	llm    ports.LLMProvider
+	vector ports.VectorStore
 }
 
-func NewAgentEngine(llm core.LLMProvider, vector core.VectorStore) *AgentEngine {
+func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore) *AgentEngine {
 	return &AgentEngine{
 		llm:    llm,
 		vector: vector,

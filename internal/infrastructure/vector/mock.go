@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 	"fmt"
 	"math"
 	"sort"
@@ -13,7 +14,7 @@ import (
 	"sync"
 )
 
-var _ core.VectorStore = (*MockVectorStore)(nil)
+var _ ports.VectorStore = (*MockVectorStore)(nil)
 
 // 存储在内存中的实体结构
 type vectorItem struct {

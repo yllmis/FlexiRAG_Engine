@@ -9,6 +9,7 @@ import (
 	"flexirag-engine/internal/api/v1/middlewares"
 	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
 
@@ -18,8 +19,8 @@ import (
 type Handler struct {
 	agentEngine  *engine.AgentEngine
 	chunkService *knowledge.ChunkService
-	agentRepo    core.AgentRepository
-	auditLogger  core.AuditLogger
+	agentRepo    ports.AgentRepository
+	auditLogger  ports.AuditLogger
 }
 
 type apiResponse struct {
@@ -44,7 +45,7 @@ func respondError(c *gin.Context, httpStatus int, msg string) {
 	})
 }
 
-func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentRepo core.AgentRepository, auditLogger ...core.AuditLogger) *Handler {
+func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentRepo ports.AgentRepository, auditLogger ...ports.AuditLogger) *Handler {
 	h := &Handler{
 		agentEngine:  agentEngine,
 		chunkService: chunkService,

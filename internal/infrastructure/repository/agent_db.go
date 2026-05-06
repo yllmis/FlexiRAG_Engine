@@ -3,13 +3,13 @@ package repository
 import (
 	"context"
 	"errors"
-	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/ports"
 
 	"gorm.io/gorm"
 )
 
-var _ core.AgentRepository = (*PGAgentRepo)(nil)
+var _ ports.AgentRepository = (*PGAgentRepo)(nil)
 
 type PGAgentRepo struct {
 	db *gorm.DB

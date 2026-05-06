@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 
 	"github.com/gin-gonic/gin"
 )
 
-func RateLimit(limiter core.RateLimiter) gin.HandlerFunc {
+func RateLimit(limiter ports.RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.ClientIP()
 		if subjectID, ok := c.Get(ContextSubjectIDKey); ok {

@@ -2,18 +2,18 @@ package knowledge
 
 import (
 	"context"
-	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/pkg/textsplit"
 	"fmt"
 	"time"
 )
 
 type ChunkService struct {
-	llm    core.LLMProvider
-	vector core.VectorStore
+	llm    ports.LLMProvider
+	vector ports.VectorStore
 }
 
-func NewChunkService(llm core.LLMProvider, vector core.VectorStore) *ChunkService {
+func NewChunkService(llm ports.LLMProvider, vector ports.VectorStore) *ChunkService {
 	return &ChunkService{
 		llm:    llm,
 		vector: vector,

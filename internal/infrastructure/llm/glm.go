@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 	"fmt"
 	"strings"
 
@@ -16,7 +17,7 @@ const (
 )
 
 // 编译期接口实现检查
-var _ core.LLMProvider = (*GLMClient)(nil)
+var _ ports.LLMProvider = (*GLMClient)(nil)
 
 type GLMClient struct {
 	client     *openai.Client

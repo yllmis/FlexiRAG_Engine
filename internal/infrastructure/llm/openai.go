@@ -3,13 +3,14 @@ package llm
 import (
 	"context"
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 	"fmt"
 
 	"github.com/sashabaranov/go-openai"
 )
 
 // 编译期接口实现检查
-var _ core.LLMProvider = (*OpenAIClient)(nil)
+var _ ports.LLMProvider = (*OpenAIClient)(nil)
 
 type OpenAIClient struct {
 	client     *openai.Client

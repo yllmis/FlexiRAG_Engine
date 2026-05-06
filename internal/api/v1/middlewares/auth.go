@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"strings"
 
-	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Auth(authService core.AuthService) gin.HandlerFunc {
+func Auth(authService ports.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := extractBearer(c.GetHeader("Authorization"))
 		subject, err := authService.ValidateToken(c.Request.Context(), token)

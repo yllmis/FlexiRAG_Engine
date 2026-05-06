@@ -6,19 +6,20 @@ import (
 	"sync/atomic"
 
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 )
 
-var _ core.AuditLogger = (*AsyncWriter)(nil)
+var _ ports.AuditLogger = (*AsyncWriter)(nil)
 
 type AsyncWriter struct {
-	repo  core.AuditRepository
+	repo  ports.AuditRepository
 	queue chan core.AuditEvent
 	dropN atomic.Uint64
 	errN  atomic.Uint64
 	enqN  atomic.Uint64
 }
 
-func NewAsyncWriter(repo core.AuditRepository, queueSize int) *AsyncWriter {
+func NewAsyncWriter(repo ports.AuditRepository, queueSize int) *AsyncWriter {
 	if queueSize <= 0 {
 		queueSize = 1024
 	}

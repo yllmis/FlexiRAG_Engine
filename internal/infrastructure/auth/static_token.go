@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 )
 
 var ErrInvalidToken = errors.New("invalid token")
 
-var _ core.AuthService = (*StaticTokenAuth)(nil)
+var _ ports.AuthService = (*StaticTokenAuth)(nil)
 
 type StaticTokenAuth struct {
 	adminToken string

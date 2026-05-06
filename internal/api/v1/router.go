@@ -2,13 +2,13 @@ package v1
 
 import (
 	"flexirag-engine/internal/api/v1/middlewares"
-	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRouter 注册所有的 V1 API 路由
-func SetupRouter(r *gin.Engine, h *Handler, authService core.AuthService, limiter core.RateLimiter) {
+func SetupRouter(r *gin.Engine, h *Handler, authService ports.AuthService, limiter ports.RateLimiter) {
 	r.Use(middlewares.RequestID())
 	r.GET("/ping", h.Ping)
 
@@ -26,6 +26,6 @@ func SetupRouter(r *gin.Engine, h *Handler, authService core.AuthService, limite
 	}
 }
 
-func RegisterRoutes(r *gin.Engine, h *Handler, authService core.AuthService, limiter core.RateLimiter) {
+func RegisterRoutes(r *gin.Engine, h *Handler, authService ports.AuthService, limiter ports.RateLimiter) {
 	SetupRouter(r, h, authService, limiter)
 }

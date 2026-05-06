@@ -3,6 +3,7 @@ package vector
 import (
 	"context"
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 	"fmt"
 
 	"github.com/pgvector/pgvector-go"
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var _ core.VectorStore = (*PGVectorStore)(nil)
+var _ ports.VectorStore = (*PGVectorStore)(nil)
 
 type DocumentChunk struct {
 	ID      string `gorm:"primaryKey;type:varchar(255)"`

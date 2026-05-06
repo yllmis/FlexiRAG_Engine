@@ -5,11 +5,12 @@ import (
 	"time"
 
 	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 
 	"gorm.io/gorm"
 )
 
-var _ core.AuditRepository = (*PGAuditRepo)(nil)
+var _ ports.AuditRepository = (*PGAuditRepo)(nil)
 
 type AuditLog struct {
 	ID           uint      `gorm:"primaryKey"`

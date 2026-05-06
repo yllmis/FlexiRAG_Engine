@@ -4,12 +4,12 @@ import (
 	"sync"
 	"time"
 
-	"flexirag-engine/internal/core"
+	"flexirag-engine/internal/core/ports"
 
 	"golang.org/x/time/rate"
 )
 
-var _ core.RateLimiter = (*InMemoryRateLimiter)(nil)
+var _ ports.RateLimiter = (*InMemoryRateLimiter)(nil)
 
 type InMemoryRateLimiter struct {
 	mu      sync.RWMutex             // 使用读写锁，提升性能
