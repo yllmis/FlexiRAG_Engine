@@ -8,6 +8,7 @@ import (
 
 	apiV1 "flexirag-engine/internal/api/v1"
 	"flexirag-engine/internal/config"
+	"flexirag-engine/internal/core/agent_mgmt"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/engine"
 	"flexirag-engine/internal/infrastructure/audit"
@@ -63,12 +64,13 @@ func main() {
 
 	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore)
 	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
+	agentSvc := agent_mgmt.NewAgentService(agentRepo)
 	auditLogger := audit.NewAsyncWriter(auditRepo, cfg.Security.AuditQueueSize)
 	authService := auth.NewStaticTokenAuth(cfg.Security.AdminToken)
 	rateLimiter := ratelimit.NewInMemoryRateLimiter(cfg.Security.RateLimitPerMinute)
 
 	r := gin.Default()
-	handler := apiV1.NewHandler(agentEngine, chunkService, agentRepo, auditLogger)
+	handler := apiV1.NewHandler(agentEngine, chunkService, agentSvc, auditLogger)
 	apiV1.RegisterRoutes(r, handler, authService, rateLimiter)
 
 	addr := ":" + strconv.Itoa(cfg.Server.Port)

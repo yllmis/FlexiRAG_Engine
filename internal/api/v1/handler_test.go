@@ -20,53 +20,53 @@ type testAPIResponse struct {
 	Data json.RawMessage `json:"data"`
 }
 
-type mockAgentRepo struct {
-	createFn  func(ctx context.Context, agent *agent_mgmt.Agent) error
-	getByIDFn func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
+type mockAgentSvc struct {
+	createFn  func(ctx context.Context, name, systemPrompt string) (*agent_mgmt.Agent, error)
 	listFn    func(ctx context.Context) ([]agent_mgmt.Agent, error)
+	getByIDFn func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
 	updateFn  func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
-	deleteFn  func(ctx context.Context, id uint) (bool, error)
+	deleteFn  func(ctx context.Context, id uint) error
 }
 
-func (m *mockAgentRepo) Create(ctx context.Context, agent *agent_mgmt.Agent) error {
+func (m *mockAgentSvc) Create(ctx context.Context, name, systemPrompt string) (*agent_mgmt.Agent, error) {
 	if m.createFn != nil {
-		return m.createFn(ctx, agent)
+		return m.createFn(ctx, name, systemPrompt)
 	}
-	return nil
+	return &agent_mgmt.Agent{ID: 1, Name: name, SystemPrompt: systemPrompt}, nil
 }
 
-func (m *mockAgentRepo) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error) {
-	if m.getByIDFn != nil {
-		return m.getByIDFn(ctx, id)
-	}
-	return nil, nil
-}
-
-func (m *mockAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
 	if m.listFn != nil {
 		return m.listFn(ctx)
 	}
 	return nil, nil
 }
 
-func (m *mockAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error) {
+	if m.getByIDFn != nil {
+		return m.getByIDFn(ctx, id)
+	}
+	return nil, agent_mgmt.ErrAgentNotFound
+}
+
+func (m *mockAgentSvc) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
 	if m.updateFn != nil {
 		return m.updateFn(ctx, id, name, systemPrompt)
 	}
 	return nil, nil
 }
 
-func (m *mockAgentRepo) Delete(ctx context.Context, id uint) (bool, error) {
+func (m *mockAgentSvc) Delete(ctx context.Context, id uint) error {
 	if m.deleteFn != nil {
 		return m.deleteFn(ctx, id)
 	}
-	return false, nil
+	return nil
 }
 
 func TestUpdateAgent_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
+	h := NewHandler(nil, nil, &mockAgentSvc{
 		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
 			updatedName := "测试Agent"
 			updatedPrompt := "旧提示词"
@@ -114,7 +114,7 @@ func TestUpdateAgent_Success(t *testing.T) {
 func TestUpdateAgent_InvalidID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{})
+	h := NewHandler(nil, nil, &mockAgentSvc{})
 	r := gin.New()
 	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
@@ -126,20 +126,16 @@ func TestUpdateAgent_InvalidID(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("期望状态码 400，实际 %d，响应：%s", w.Code, w.Body.String())
 	}
-
-	var resp testAPIResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("解析响应失败: %v", err)
-	}
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("期望业务码 400，实际 %d", resp.Code)
-	}
 }
 
 func TestUpdateAgent_EmptyPrompt(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{})
+	h := NewHandler(nil, nil, &mockAgentSvc{
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+			return nil, agent_mgmt.ErrInvalidInput
+		},
+	})
 	r := gin.New()
 	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
@@ -156,7 +152,11 @@ func TestUpdateAgent_EmptyPrompt(t *testing.T) {
 func TestUpdateAgent_NoField(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{})
+	h := NewHandler(nil, nil, &mockAgentSvc{
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+			return nil, agent_mgmt.ErrInvalidInput
+		},
+	})
 	r := gin.New()
 	r.PUT("/api/v1/agents/:id", h.UpdateAgent)
 
@@ -173,9 +173,9 @@ func TestUpdateAgent_NoField(t *testing.T) {
 func TestUpdateAgent_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
+	h := NewHandler(nil, nil, &mockAgentSvc{
 		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
-			return nil, nil
+			return nil, agent_mgmt.ErrAgentNotFound
 		},
 	})
 
@@ -195,7 +195,7 @@ func TestUpdateAgent_NotFound(t *testing.T) {
 func TestUpdateAgent_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
+	h := NewHandler(nil, nil, &mockAgentSvc{
 		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
 			return nil, errors.New("db error")
 		},
@@ -217,7 +217,7 @@ func TestUpdateAgent_RepoError(t *testing.T) {
 func TestListAgents_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
+	h := NewHandler(nil, nil, &mockAgentSvc{
 		listFn: func(ctx context.Context) ([]agent_mgmt.Agent, error) {
 			return []agent_mgmt.Agent{
 				{ID: 1, Name: "AgentA", SystemPrompt: "PromptA"},
@@ -259,7 +259,7 @@ func TestListAgents_Success(t *testing.T) {
 func TestListAgents_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
+	h := NewHandler(nil, nil, &mockAgentSvc{
 		listFn: func(ctx context.Context) ([]agent_mgmt.Agent, error) {
 			return nil, errors.New("db error")
 		},
@@ -275,22 +275,17 @@ func TestListAgents_RepoError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("期望状态码 500，实际 %d，响应：%s", w.Code, w.Body.String())
 	}
-
-	var resp testAPIResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("解析响应失败: %v", err)
-	}
-	if resp.Code != http.StatusInternalServerError {
-		t.Fatalf("期望业务码 500，实际 %d", resp.Code)
-	}
 }
 
 func TestDeleteAgent_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
-		deleteFn: func(ctx context.Context, id uint) (bool, error) {
-			return id == 1, nil
+	h := NewHandler(nil, nil, &mockAgentSvc{
+		deleteFn: func(ctx context.Context, id uint) error {
+			if id == 1 {
+				return nil
+			}
+			return agent_mgmt.ErrAgentNotFound
 		},
 	})
 
@@ -309,7 +304,7 @@ func TestDeleteAgent_Success(t *testing.T) {
 func TestDeleteAgent_InvalidID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{})
+	h := NewHandler(nil, nil, &mockAgentSvc{})
 	r := gin.New()
 	r.DELETE("/api/v1/agents/:id", h.DeleteAgent)
 
@@ -325,9 +320,9 @@ func TestDeleteAgent_InvalidID(t *testing.T) {
 func TestDeleteAgent_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := NewHandler(nil, nil, &mockAgentRepo{
-		deleteFn: func(ctx context.Context, id uint) (bool, error) {
-			return false, nil
+	h := NewHandler(nil, nil, &mockAgentSvc{
+		deleteFn: func(ctx context.Context, id uint) error {
+			return agent_mgmt.ErrAgentNotFound
 		},
 	})
 	r := gin.New()

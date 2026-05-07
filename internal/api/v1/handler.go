@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,8 +10,8 @@ import (
 	"flexirag-engine/internal/api/v1/middlewares"
 	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent_mgmt"
-	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/internal/core/knowledge"
+	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/internal/engine"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,7 @@ import (
 type Handler struct {
 	agentEngine  *engine.AgentEngine
 	chunkService *knowledge.ChunkService
-	agentRepo    ports.AgentRepository
+	agentSvc     agent_mgmt.AgentService
 	auditLogger  ports.AuditLogger
 }
 
@@ -45,11 +46,11 @@ func respondError(c *gin.Context, httpStatus int, msg string) {
 	})
 }
 
-func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentRepo ports.AgentRepository, auditLogger ...ports.AuditLogger) *Handler {
+func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentSvc agent_mgmt.AgentService, auditLogger ...ports.AuditLogger) *Handler {
 	h := &Handler{
 		agentEngine:  agentEngine,
 		chunkService: chunkService,
-		agentRepo:    agentRepo,
+		agentSvc:     agentSvc,
 	}
 	if len(auditLogger) > 0 {
 		h.auditLogger = auditLogger[0]
@@ -90,21 +91,22 @@ func (h *Handler) Chat(c *gin.Context) {
 		AgentID uint   `json:"agent_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "参数错误")
+		h.audit(c, "chat", "agent", "", "failed", "参数错误")
 		respondError(c, http.StatusBadRequest, "参数错误，需要 query 和 agent_id 字段")
 		return
 	}
 
-	agent, err := h.agentRepo.GetByID(c.Request.Context(), req.AgentID)
+	agent, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
+		agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
+		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+			h.audit(c, "chat", "agent", agentIDStr, "failed", "Agent 不存在")
+			respondError(c, http.StatusNotFound, "Agent 不存在")
+			return
+		}
 		log.Printf("查询 Agent 失败: %v\n", err)
-		h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "查询 Agent 失败")
+		h.audit(c, "chat", "agent", agentIDStr, "failed", "查询 Agent 失败")
 		respondError(c, http.StatusInternalServerError, "查询 Agent 失败")
-		return
-	}
-	if agent == nil {
-		h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "Agent 不存在")
-		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
@@ -129,21 +131,22 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "参数错误")
+		h.audit(c, "knowledge_ingest", "agent", "", "failed", "参数错误")
 		respondError(c, http.StatusBadRequest, "参数错误，需要 text 和 agent_id 字段")
 		return
 	}
 
-	agent, err := h.agentRepo.GetByID(c.Request.Context(), req.AgentID)
+	agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
+	agent, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
+		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+			h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "Agent 不存在")
+			respondError(c, http.StatusNotFound, "Agent 不存在")
+			return
+		}
 		log.Printf("查询 Agent 失败: %v\n", err)
-		h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "查询 Agent 失败")
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "查询 Agent 失败")
 		respondError(c, http.StatusInternalServerError, "查询 Agent 失败")
-		return
-	}
-	if agent == nil {
-		h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "Agent 不存在")
-		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
@@ -151,26 +154,25 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 	if chunkSize <= 0 {
 		chunkSize = 300
 	}
-
 	overlap := req.Overlap
 	if overlap < 0 {
 		overlap = 0
 	}
 	if overlap >= chunkSize {
-		h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "overlap 参数不合法")
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "overlap 参数不合法")
 		respondError(c, http.StatusBadRequest, "overlap 必须小于 chunk_size")
 		return
 	}
 
-	err = h.chunkService.IngestText(c.Request.Context(), req.AgentID, req.Text, chunkSize, overlap)
+	err = h.chunkService.IngestText(c.Request.Context(), agent.ID, req.Text, chunkSize, overlap)
 	if err != nil {
 		log.Printf("知识入库失败: %v\n", err)
-		h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "知识入库失败")
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "知识入库失败")
 		respondError(c, http.StatusInternalServerError, "知识入库失败")
 		return
 	}
 
-	h.audit(c, "knowledge_ingest", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "success", "知识入库成功")
+	h.audit(c, "knowledge_ingest", "agent", agentIDStr, "success", "知识入库成功")
 	respondSuccess(c, gin.H{
 		"message":    "知识入库成功，已持久化到 PostgreSQL",
 		"agent_id":   req.AgentID,
@@ -184,27 +186,19 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 		Name         string `json:"name" binding:"required"`
 		SystemPrompt string `json:"system_prompt" binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.audit(c, "agent_create", "agent", "", "failed", "参数错误")
 		respondError(c, http.StatusBadRequest, "参数错误，需要 name 和 system_prompt 字段")
 		return
 	}
 
-	name := strings.TrimSpace(req.Name)
-	systemPrompt := strings.TrimSpace(req.SystemPrompt)
-	if name == "" || systemPrompt == "" {
-		h.audit(c, "agent_create", "agent", "", "failed", "name 或 system_prompt 为空")
-		respondError(c, http.StatusBadRequest, "name 和 system_prompt 不能为空")
-		return
-	}
-
-	agent := &agent_mgmt.Agent{
-		Name:         name,
-		SystemPrompt: systemPrompt,
-	}
-
-	if err := h.agentRepo.Create(c.Request.Context(), agent); err != nil {
+	agent, err := h.agentSvc.Create(c.Request.Context(), req.Name, req.SystemPrompt)
+	if err != nil {
+		if errors.Is(err, agent_mgmt.ErrInvalidInput) {
+			h.audit(c, "agent_create", "agent", "", "failed", "name 或 system_prompt 为空")
+			respondError(c, http.StatusBadRequest, "name 和 system_prompt 不能为空")
+			return
+		}
 		log.Printf("创建 Agent 失败: %v\n", err)
 		h.audit(c, "agent_create", "agent", "", "failed", "创建 Agent 失败")
 		respondError(c, http.StatusInternalServerError, "创建 Agent 失败")
@@ -220,13 +214,12 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 }
 
 func (h *Handler) ListAgents(c *gin.Context) {
-	agents, err := h.agentRepo.List(c.Request.Context())
+	agents, err := h.agentSvc.List(c.Request.Context())
 	if err != nil {
 		log.Printf("查询 Agent 花名册失败: %v\n", err)
 		respondError(c, http.StatusInternalServerError, "查询 Agent 花名册失败")
 		return
 	}
-
 	respondSuccess(c, gin.H{"agents": agents})
 }
 
@@ -248,48 +241,26 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		return
 	}
 
-	var namePtr *string
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "failed", "name 为空")
-			respondError(c, http.StatusBadRequest, "name 不能为空")
-			return
-		}
-		namePtr = &name
-	}
-
-	var promptPtr *string
-	if req.SystemPrompt != nil {
-		systemPrompt := strings.TrimSpace(*req.SystemPrompt)
-		if systemPrompt == "" {
-			h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "failed", "system_prompt 为空")
-			respondError(c, http.StatusBadRequest, "system_prompt 不能为空")
-			return
-		}
-		promptPtr = &systemPrompt
-	}
-
-	if namePtr == nil && promptPtr == nil {
-		h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "failed", "更新字段为空")
-		respondError(c, http.StatusBadRequest, "至少提供 name 或 system_prompt 其中一个字段")
-		return
-	}
-
-	agent, err := h.agentRepo.Update(c.Request.Context(), uint(idVal), namePtr, promptPtr)
+	agent, err := h.agentSvc.Update(c.Request.Context(), uint(idVal), req.Name, req.SystemPrompt)
 	if err != nil {
+		idStr := strconv.FormatUint(idVal, 10)
+		if errors.Is(err, agent_mgmt.ErrInvalidInput) {
+			h.audit(c, "agent_update", "agent", idStr, "failed", "参数校验失败")
+			respondError(c, http.StatusBadRequest, "参数错误：name 或 system_prompt 不能为空，且至少提供一个字段")
+			return
+		}
+		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+			h.audit(c, "agent_update", "agent", idStr, "failed", "Agent 不存在")
+			respondError(c, http.StatusNotFound, "Agent 不存在")
+			return
+		}
 		log.Printf("更新 Agent 失败: %v\n", err)
-		h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "failed", "更新 Agent 失败")
+		h.audit(c, "agent_update", "agent", idStr, "failed", "更新 Agent 失败")
 		respondError(c, http.StatusInternalServerError, "更新 Agent 失败")
 		return
 	}
-	if agent == nil {
-		h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "failed", "Agent 不存在")
-		respondError(c, http.StatusNotFound, "Agent 不存在")
-		return
-	}
 
-	h.audit(c, "agent_update", "agent", strconv.FormatUint(idVal, 10), "success", "更新 Agent 成功")
+	h.audit(c, "agent_update", "agent", strconv.FormatUint(uint64(agent.ID), 10), "success", "更新 Agent 成功")
 	respondSuccess(c, gin.H{
 		"agent_id":      agent.ID,
 		"name":          agent.Name,
@@ -305,16 +276,17 @@ func (h *Handler) DeleteAgent(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.agentRepo.Delete(c.Request.Context(), uint(idVal))
+	err = h.agentSvc.Delete(c.Request.Context(), uint(idVal))
 	if err != nil {
+		idStr := strconv.FormatUint(idVal, 10)
+		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+			h.audit(c, "agent_delete", "agent", idStr, "failed", "Agent 不存在")
+			respondError(c, http.StatusNotFound, "Agent 不存在")
+			return
+		}
 		log.Printf("删除 Agent 失败: %v\n", err)
-		h.audit(c, "agent_delete", "agent", strconv.FormatUint(idVal, 10), "failed", "删除 Agent 失败")
+		h.audit(c, "agent_delete", "agent", idStr, "failed", "删除 Agent 失败")
 		respondError(c, http.StatusInternalServerError, "删除 Agent 失败")
-		return
-	}
-	if !ok {
-		h.audit(c, "agent_delete", "agent", strconv.FormatUint(idVal, 10), "failed", "Agent 不存在")
-		respondError(c, http.StatusNotFound, "Agent 不存在")
 		return
 	}
 
