@@ -62,7 +62,9 @@ func main() {
 		log.Fatal("初始化审计仓储失败: ", err)
 	}
 
-	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore)
+	rewriter := llm.NewLLMQueryRewriter(llmProvider)
+
+	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore, engine.WithQueryRewriter(rewriter))
 	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
 	agentSvc := agent.NewAgentService(agentRepo)
 	auditLogger := audit.NewAsyncWriter(auditRepo, cfg.Security.AuditQueueSize)

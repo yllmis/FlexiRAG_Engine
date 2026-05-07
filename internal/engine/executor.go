@@ -5,39 +5,55 @@ import (
 	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent"
 	"flexirag-engine/internal/core/ports"
-
+	"flexirag-engine/internal/core/retrieval"
 	"fmt"
+	"sort"
 	"strings"
 )
 
 type AgentEngine struct {
-	llm    ports.LLMProvider
-	vector ports.VectorStore
+	llm      ports.LLMProvider
+	vector   ports.VectorStore
+	rewriter retrieval.QueryRewriter // 可选，nil 表示不做改写
 }
 
-func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore) *AgentEngine {
-	return &AgentEngine{
+type EngineOption func(*AgentEngine)
+
+func WithQueryRewriter(r retrieval.QueryRewriter) EngineOption {
+	return func(e *AgentEngine) {
+		e.rewriter = r
+	}
+}
+
+func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore, opts ...EngineOption) *AgentEngine {
+	e := &AgentEngine{
 		llm:    llm,
 		vector: vector,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
-func (e *AgentEngine) ProcessQuery(ctx context.Context, agent *agent.Agent, query string) (string, error) {
-	vectors, err := e.llm.Embed(ctx, []string{query})
-	if err != nil {
-		return "", fmt.Errorf("生成向量失败: %w", err)
-	}
-	if len(vectors) == 0 || len(vectors[0]) == 0 {
-		return "", fmt.Errorf("生成向量失败: 返回空向量")
+const defaultTopK = 3
+
+func (e *AgentEngine) ProcessQuery(ctx context.Context, agt *agent.Agent, query string) (string, error) {
+	// Step 1: 查询改写（可选）
+	queries := []string{query}
+	if e.rewriter != nil {
+		rewritten, err := e.rewriter.Rewrite(ctx, query)
+		if err == nil && len(rewritten) > 0 {
+			queries = rewritten
+		}
 	}
 
-	searchResults, err := e.vector.Search(ctx, agent.ID, vectors[0], 3)
-	if err != nil {
-		return "", fmt.Errorf("向量搜索失败: %w", err)
-	}
+	// Step 2: 对每个子查询分别 Embedding + 检索，合并去重
+	allResults := e.retrieveAll(ctx, agt.ID, queries)
 
+	// Step 3: 拼接 Context
 	var contextBuilder strings.Builder
-	for i, result := range searchResults {
+	for i, result := range allResults {
 		if strings.TrimSpace(result.Content) == "" {
 			continue
 		}
@@ -50,10 +66,9 @@ func (e *AgentEngine) ProcessQuery(ctx context.Context, agent *agent.Agent, quer
 		contextInfo,
 		query,
 	)
-	// 动态设置智能体角色
-	systemPrompt := agent.SystemPrompt
+
+	systemPrompt := agt.SystemPrompt
 	if systemPrompt == "" {
-		// 如果用户没配置，给一个默认的兜底
 		systemPrompt = "你是一个智能助手，请依据提供的上下文进行客观回答。如果上下文中没有相关信息，请明确告知用户，不要捏造事实。"
 	}
 
@@ -68,4 +83,45 @@ func (e *AgentEngine) ProcessQuery(ctx context.Context, agent *agent.Agent, quer
 	}
 
 	return response, nil
+}
+
+// retrieveAll 对多个子查询分别检索，合并去重后按 Score 降序取 Top-K
+func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []string) []core.SearchResult {
+	seen := make(map[string]bool)
+	var merged []core.SearchResult
+
+	for _, q := range queries {
+		q = strings.TrimSpace(q)
+		if q == "" {
+			continue
+		}
+
+		vectors, err := e.llm.Embed(ctx, []string{q})
+		if err != nil || len(vectors) == 0 || len(vectors[0]) == 0 {
+			continue
+		}
+
+		results, err := e.vector.Search(ctx, agentID, vectors[0], defaultTopK)
+		if err != nil {
+			continue
+		}
+
+		for _, r := range results {
+			if seen[r.ID] {
+				continue
+			}
+			seen[r.ID] = true
+			merged = append(merged, r)
+		}
+	}
+
+	// 按 Score 降序排列，取前 defaultTopK
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Score > merged[j].Score
+	})
+	if len(merged) > defaultTopK {
+		merged = merged[:defaultTopK]
+	}
+
+	return merged
 }
