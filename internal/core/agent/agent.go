@@ -1,4 +1,4 @@
-package agent_mgmt
+package agent
 
 type Agent struct {
 	ID           uint   `gorm:"primaryKey;autoIncrement" json:"id"`

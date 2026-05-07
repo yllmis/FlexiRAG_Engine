@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"flexirag-engine/internal/core"
-	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/agent"
 	"flexirag-engine/internal/core/ports"
 
 	"fmt"
@@ -22,7 +22,7 @@ func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore) *AgentEngin
 	}
 }
 
-func (e *AgentEngine) ProcessQuery(ctx context.Context, agent *agent_mgmt.Agent, query string) (string, error) {
+func (e *AgentEngine) ProcessQuery(ctx context.Context, agent *agent.Agent, query string) (string, error) {
 	vectors, err := e.llm.Embed(ctx, []string{query})
 	if err != nil {
 		return "", fmt.Errorf("生成向量失败: %w", err)

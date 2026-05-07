@@ -9,7 +9,7 @@ import (
 
 	"flexirag-engine/internal/api/v1/middlewares"
 	"flexirag-engine/internal/core"
-	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/agent"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/internal/engine"
@@ -20,7 +20,7 @@ import (
 type Handler struct {
 	agentEngine  *engine.AgentEngine
 	chunkService *knowledge.ChunkService
-	agentSvc     agent_mgmt.AgentService
+	agentSvc     agent.AgentService
 	auditLogger  ports.AuditLogger
 }
 
@@ -46,7 +46,7 @@ func respondError(c *gin.Context, httpStatus int, msg string) {
 	})
 }
 
-func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentSvc agent_mgmt.AgentService, auditLogger ...ports.AuditLogger) *Handler {
+func NewHandler(agentEngine *engine.AgentEngine, chunkService *knowledge.ChunkService, agentSvc agent.AgentService, auditLogger ...ports.AuditLogger) *Handler {
 	h := &Handler{
 		agentEngine:  agentEngine,
 		chunkService: chunkService,
@@ -96,10 +96,10 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 
-	agent, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
+	agt, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
 		agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
-		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+		if errors.Is(err, agent.ErrAgentNotFound) {
 			h.audit(c, "chat", "agent", agentIDStr, "failed", "Agent 不存在")
 			respondError(c, http.StatusNotFound, "Agent 不存在")
 			return
@@ -110,7 +110,7 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 
-	answer, err := h.agentEngine.ProcessQuery(c.Request.Context(), agent, req.Query)
+	answer, err := h.agentEngine.ProcessQuery(c.Request.Context(), agt, req.Query)
 	if err != nil {
 		log.Printf("处理失败: %v\n", err)
 		h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "AI 思考失败")
@@ -137,9 +137,9 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 	}
 
 	agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
-	agent, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
+	agt, err := h.agentSvc.GetByID(c.Request.Context(), req.AgentID)
 	if err != nil {
-		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+		if errors.Is(err, agent.ErrAgentNotFound) {
 			h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "Agent 不存在")
 			respondError(c, http.StatusNotFound, "Agent 不存在")
 			return
@@ -164,7 +164,7 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 		return
 	}
 
-	err = h.chunkService.IngestText(c.Request.Context(), agent.ID, req.Text, chunkSize, overlap)
+	err = h.chunkService.IngestText(c.Request.Context(), agt.ID, req.Text, chunkSize, overlap)
 	if err != nil {
 		log.Printf("知识入库失败: %v\n", err)
 		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "知识入库失败")
@@ -192,9 +192,9 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 		return
 	}
 
-	agent, err := h.agentSvc.Create(c.Request.Context(), req.Name, req.SystemPrompt)
+	agt, err := h.agentSvc.Create(c.Request.Context(), req.Name, req.SystemPrompt)
 	if err != nil {
-		if errors.Is(err, agent_mgmt.ErrInvalidInput) {
+		if errors.Is(err, agent.ErrInvalidInput) {
 			h.audit(c, "agent_create", "agent", "", "failed", "name 或 system_prompt 为空")
 			respondError(c, http.StatusBadRequest, "name 和 system_prompt 不能为空")
 			return
@@ -205,11 +205,11 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 		return
 	}
 
-	h.audit(c, "agent_create", "agent", strconv.FormatUint(uint64(agent.ID), 10), "success", "创建 Agent 成功")
+	h.audit(c, "agent_create", "agent", strconv.FormatUint(uint64(agt.ID), 10), "success", "创建 Agent 成功")
 	respondSuccess(c, gin.H{
-		"agent_id":      agent.ID,
-		"name":          agent.Name,
-		"system_prompt": agent.SystemPrompt,
+		"agent_id":      agt.ID,
+		"name":          agt.Name,
+		"system_prompt": agt.SystemPrompt,
 	})
 }
 
@@ -241,15 +241,15 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		return
 	}
 
-	agent, err := h.agentSvc.Update(c.Request.Context(), uint(idVal), req.Name, req.SystemPrompt)
+	agt, err := h.agentSvc.Update(c.Request.Context(), uint(idVal), req.Name, req.SystemPrompt)
 	if err != nil {
 		idStr := strconv.FormatUint(idVal, 10)
-		if errors.Is(err, agent_mgmt.ErrInvalidInput) {
+		if errors.Is(err, agent.ErrInvalidInput) {
 			h.audit(c, "agent_update", "agent", idStr, "failed", "参数校验失败")
 			respondError(c, http.StatusBadRequest, "参数错误：name 或 system_prompt 不能为空，且至少提供一个字段")
 			return
 		}
-		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+		if errors.Is(err, agent.ErrAgentNotFound) {
 			h.audit(c, "agent_update", "agent", idStr, "failed", "Agent 不存在")
 			respondError(c, http.StatusNotFound, "Agent 不存在")
 			return
@@ -260,11 +260,11 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		return
 	}
 
-	h.audit(c, "agent_update", "agent", strconv.FormatUint(uint64(agent.ID), 10), "success", "更新 Agent 成功")
+	h.audit(c, "agent_update", "agent", strconv.FormatUint(uint64(agt.ID), 10), "success", "更新 Agent 成功")
 	respondSuccess(c, gin.H{
-		"agent_id":      agent.ID,
-		"name":          agent.Name,
-		"system_prompt": agent.SystemPrompt,
+		"agent_id":      agt.ID,
+		"name":          agt.Name,
+		"system_prompt": agt.SystemPrompt,
 	})
 }
 
@@ -279,7 +279,7 @@ func (h *Handler) DeleteAgent(c *gin.Context) {
 	err = h.agentSvc.Delete(c.Request.Context(), uint(idVal))
 	if err != nil {
 		idStr := strconv.FormatUint(idVal, 10)
-		if errors.Is(err, agent_mgmt.ErrAgentNotFound) {
+		if errors.Is(err, agent.ErrAgentNotFound) {
 			h.audit(c, "agent_delete", "agent", idStr, "failed", "Agent 不存在")
 			respondError(c, http.StatusNotFound, "Agent 不存在")
 			return

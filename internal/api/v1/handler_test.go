@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"flexirag-engine/internal/core/agent_mgmt"
+	"flexirag-engine/internal/core/agent"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,35 +21,35 @@ type testAPIResponse struct {
 }
 
 type mockAgentSvc struct {
-	createFn  func(ctx context.Context, name, systemPrompt string) (*agent_mgmt.Agent, error)
-	listFn    func(ctx context.Context) ([]agent_mgmt.Agent, error)
-	getByIDFn func(ctx context.Context, id uint) (*agent_mgmt.Agent, error)
-	updateFn  func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error)
+	createFn  func(ctx context.Context, name, systemPrompt string) (*agent.Agent, error)
+	listFn    func(ctx context.Context) ([]agent.Agent, error)
+	getByIDFn func(ctx context.Context, id uint) (*agent.Agent, error)
+	updateFn  func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error)
 	deleteFn  func(ctx context.Context, id uint) error
 }
 
-func (m *mockAgentSvc) Create(ctx context.Context, name, systemPrompt string) (*agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) Create(ctx context.Context, name, systemPrompt string) (*agent.Agent, error) {
 	if m.createFn != nil {
 		return m.createFn(ctx, name, systemPrompt)
 	}
-	return &agent_mgmt.Agent{ID: 1, Name: name, SystemPrompt: systemPrompt}, nil
+	return &agent.Agent{ID: 1, Name: name, SystemPrompt: systemPrompt}, nil
 }
 
-func (m *mockAgentSvc) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) List(ctx context.Context) ([]agent.Agent, error) {
 	if m.listFn != nil {
 		return m.listFn(ctx)
 	}
 	return nil, nil
 }
 
-func (m *mockAgentSvc) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) GetByID(ctx context.Context, id uint) (*agent.Agent, error) {
 	if m.getByIDFn != nil {
 		return m.getByIDFn(ctx, id)
 	}
-	return nil, agent_mgmt.ErrAgentNotFound
+	return nil, agent.ErrAgentNotFound
 }
 
-func (m *mockAgentSvc) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+func (m *mockAgentSvc) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
 	if m.updateFn != nil {
 		return m.updateFn(ctx, id, name, systemPrompt)
 	}
@@ -67,7 +67,7 @@ func TestUpdateAgent_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
 			updatedName := "测试Agent"
 			updatedPrompt := "旧提示词"
 			if name != nil {
@@ -76,7 +76,7 @@ func TestUpdateAgent_Success(t *testing.T) {
 			if systemPrompt != nil {
 				updatedPrompt = *systemPrompt
 			}
-			return &agent_mgmt.Agent{ID: id, Name: updatedName, SystemPrompt: updatedPrompt}, nil
+			return &agent.Agent{ID: id, Name: updatedName, SystemPrompt: updatedPrompt}, nil
 		},
 	})
 
@@ -132,8 +132,8 @@ func TestUpdateAgent_EmptyPrompt(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
-			return nil, agent_mgmt.ErrInvalidInput
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
+			return nil, agent.ErrInvalidInput
 		},
 	})
 	r := gin.New()
@@ -153,8 +153,8 @@ func TestUpdateAgent_NoField(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
-			return nil, agent_mgmt.ErrInvalidInput
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
+			return nil, agent.ErrInvalidInput
 		},
 	})
 	r := gin.New()
@@ -174,8 +174,8 @@ func TestUpdateAgent_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
-			return nil, agent_mgmt.ErrAgentNotFound
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
+			return nil, agent.ErrAgentNotFound
 		},
 	})
 
@@ -196,7 +196,7 @@ func TestUpdateAgent_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+		updateFn: func(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
 			return nil, errors.New("db error")
 		},
 	})
@@ -218,8 +218,8 @@ func TestListAgents_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		listFn: func(ctx context.Context) ([]agent_mgmt.Agent, error) {
-			return []agent_mgmt.Agent{
+		listFn: func(ctx context.Context) ([]agent.Agent, error) {
+			return []agent.Agent{
 				{ID: 1, Name: "AgentA", SystemPrompt: "PromptA"},
 				{ID: 2, Name: "AgentB", SystemPrompt: "PromptB"},
 			}, nil
@@ -246,7 +246,7 @@ func TestListAgents_Success(t *testing.T) {
 	}
 
 	var data struct {
-		Agents []agent_mgmt.Agent `json:"agents"`
+		Agents []agent.Agent `json:"agents"`
 	}
 	if err := json.Unmarshal(resp.Data, &data); err != nil {
 		t.Fatalf("解析 data 失败: %v", err)
@@ -260,7 +260,7 @@ func TestListAgents_RepoError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
-		listFn: func(ctx context.Context) ([]agent_mgmt.Agent, error) {
+		listFn: func(ctx context.Context) ([]agent.Agent, error) {
 			return nil, errors.New("db error")
 		},
 	})
@@ -285,7 +285,7 @@ func TestDeleteAgent_Success(t *testing.T) {
 			if id == 1 {
 				return nil
 			}
-			return agent_mgmt.ErrAgentNotFound
+			return agent.ErrAgentNotFound
 		},
 	})
 
@@ -322,7 +322,7 @@ func TestDeleteAgent_NotFound(t *testing.T) {
 
 	h := NewHandler(nil, nil, &mockAgentSvc{
 		deleteFn: func(ctx context.Context, id uint) error {
-			return agent_mgmt.ErrAgentNotFound
+			return agent.ErrAgentNotFound
 		},
 	})
 	r := gin.New()

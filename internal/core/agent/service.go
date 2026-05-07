@@ -1,4 +1,4 @@
-package agent_mgmt
+package agent
 
 import (
 	"context"

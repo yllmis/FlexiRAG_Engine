@@ -3,13 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
-	"flexirag-engine/internal/core/agent_mgmt"
-	"flexirag-engine/internal/core/ports"
+	"flexirag-engine/internal/core/agent"
 
 	"gorm.io/gorm"
 )
 
-var _ ports.AgentRepository = (*PGAgentRepo)(nil)
+var _ agent.AgentRepository = (*PGAgentRepo)(nil)
 
 type PGAgentRepo struct {
 	db *gorm.DB
@@ -17,19 +16,19 @@ type PGAgentRepo struct {
 
 func NewPGAgentRepo(db *gorm.DB) (*PGAgentRepo, error) {
 	// 项目初期，自动建表
-	err := db.AutoMigrate(&agent_mgmt.Agent{})
+	err := db.AutoMigrate(&agent.Agent{})
 	if err != nil {
 		return nil, err
 	}
 	return &PGAgentRepo{db: db}, nil
 }
 
-func (r *PGAgentRepo) Create(ctx context.Context, agent *agent_mgmt.Agent) error {
+func (r *PGAgentRepo) Create(ctx context.Context, agent *agent.Agent) error {
 	return r.db.WithContext(ctx).Create(agent).Error
 }
 
-func (r *PGAgentRepo) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, error) {
-	var agent agent_mgmt.Agent
+func (r *PGAgentRepo) GetByID(ctx context.Context, id uint) (*agent.Agent, error) {
+	var agent agent.Agent
 	err := r.db.WithContext(ctx).First(&agent, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -40,8 +39,8 @@ func (r *PGAgentRepo) GetByID(ctx context.Context, id uint) (*agent_mgmt.Agent, 
 	return &agent, nil
 }
 
-func (r *PGAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
-	var agents []agent_mgmt.Agent
+func (r *PGAgentRepo) List(ctx context.Context) ([]agent.Agent, error) {
+	var agents []agent.Agent
 	err := r.db.WithContext(ctx).Order("id ASC").Find(&agents).Error
 	if err != nil {
 		return nil, err
@@ -49,7 +48,7 @@ func (r *PGAgentRepo) List(ctx context.Context) ([]agent_mgmt.Agent, error) {
 	return agents, nil
 }
 
-func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent_mgmt.Agent, error) {
+func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *string) (*agent.Agent, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
@@ -62,7 +61,7 @@ func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *s
 	}
 
 	result := r.db.WithContext(ctx).
-		Model(&agent_mgmt.Agent{}).
+		Model(&agent.Agent{}).
 		Where("id = ?", id).
 		Updates(updates)
 	if result.Error != nil {
@@ -76,7 +75,7 @@ func (r *PGAgentRepo) Update(ctx context.Context, id uint, name, systemPrompt *s
 }
 
 func (r *PGAgentRepo) Delete(ctx context.Context, id uint) (bool, error) {
-	result := r.db.WithContext(ctx).Delete(&agent_mgmt.Agent{}, id)
+	result := r.db.WithContext(ctx).Delete(&agent.Agent{}, id)
 	if result.Error != nil {
 		return false, result.Error
 	}
