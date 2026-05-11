@@ -69,13 +69,13 @@ func main() {
 	var engineOpts []engine.EngineOption
 	engineOpts = append(engineOpts, engine.WithQueryRewriter(rewriter))
 
-	rules, err := reviewInfra.LoadRules("configs/review_rules.yaml")
+	loadResult, err := reviewInfra.LoadRules("configs/review_rules.yaml")
 	if err != nil {
 		log.Printf("加载审核规则失败，跳过审核: %v", err)
-	} else if rules != nil {
-		reviewer := reviewInfra.NewRuleReviewer(rules)
+	} else if loadResult != nil {
+		reviewer := reviewInfra.NewRuleReviewer(loadResult)
 		engineOpts = append(engineOpts, engine.WithReviewer(reviewer))
-		log.Printf("审核模块已启用，加载 %d 条规则", len(rules))
+		log.Printf("审核模块已启用，加载 %d 条规则", len(loadResult.Rules))
 	}
 
 	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore, engineOpts...)

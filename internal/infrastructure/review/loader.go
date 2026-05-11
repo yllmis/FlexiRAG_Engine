@@ -16,8 +16,15 @@ type compiledRule struct {
 	re *regexp.Regexp // nil 表示非 regex 类型
 }
 
+// LoadResult 加载结果，包含编译后的规则和全局 scope 开关
+type LoadResult struct {
+	Rules  []compiledRule
+	Scopes map[domain.Scope]bool
+}
+
 // LoadRules 从 YAML 文件加载并编译审核规则
-func LoadRules(path string) ([]compiledRule, error) {
+// 返回 nil 表示审核模块未启用
+func LoadRules(path string) (*LoadResult, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取规则文件失败: %w", err)
@@ -47,5 +54,8 @@ func LoadRules(path string) ([]compiledRule, error) {
 		rules = append(rules, cr)
 	}
 
-	return rules, nil
+	return &LoadResult{
+		Rules:  rules,
+		Scopes: cfg.Scopes,
+	}, nil
 }

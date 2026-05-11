@@ -16,6 +16,35 @@ import (
 // ErrReviewRejected 输入审核被拒绝时返回
 var ErrReviewRejected = errors.New("输入审核未通过")
 
+// ReviewRejectedError 是结构化的审核拒绝错误。
+// Scope 用于告诉上层究竟是哪一类审核拒绝了当前请求，避免通过字符串判断来源。
+type ReviewRejectedError struct {
+	Scope   review.Scope
+	Message string
+}
+
+func (e *ReviewRejectedError) Error() string {
+	switch e.Scope {
+	case review.ScopeOutput:
+		return "输出审核未通过: " + e.Message
+	case review.ScopeIngest:
+		return "入库审核未通过: " + e.Message
+	default:
+		return "输入审核未通过: " + e.Message
+	}
+}
+
+// Unwrap 保留原有哨兵错误，方便调用方继续使用 errors.Is 做兜底判断。
+func (e *ReviewRejectedError) Unwrap() error {
+	return ErrReviewRejected
+}
+
+// ReviewOutcome 审核结果摘要，供 Handler 层决定审计和响应行为
+type ReviewOutcome struct {
+	Action       review.Action
+	MatchedRules []review.MatchedRule
+}
+
 type AgentEngine struct {
 	llm      ports.LLMProvider
 	vector   ports.VectorStore
@@ -50,15 +79,27 @@ func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore, opts ...Eng
 
 const defaultTopK = 3
 
-func (e *AgentEngine) ProcessQuery(ctx context.Context, agt *agent.Agent, query string) (string, error) {
+func (e *AgentEngine) ProcessQuery(ctx context.Context, agt *agent.Agent, query string) (string, *ReviewOutcome, error) {
 	// Step 0: 输入审核（可选）
+	var inputOutcome *ReviewOutcome
 	if e.reviewer != nil {
 		result, err := e.reviewer.Review(ctx, review.ScopeInput, query)
 		if err != nil {
-			return "", fmt.Errorf("输入审核异常: %w", err)
+			return "", nil, fmt.Errorf("输入审核异常: %w", err)
 		}
 		if !result.Passed {
-			return "", fmt.Errorf("%w: %s", ErrReviewRejected, result.Message)
+			// reject — 中断流程
+			return "", nil, &ReviewRejectedError{
+				Scope:   review.ScopeInput,
+				Message: result.Message,
+			}
+		}
+		if result.Action != review.ActionAllow {
+			// warn / review — 放行，但记录 outcome
+			inputOutcome = &ReviewOutcome{
+				Action:       result.Action,
+				MatchedRules: result.MatchedRules,
+			}
 		}
 	}
 
@@ -102,10 +143,40 @@ func (e *AgentEngine) ProcessQuery(ctx context.Context, agt *agent.Agent, query 
 
 	response, err := e.llm.Chat(ctx, messages)
 	if err != nil {
-		return "", fmt.Errorf("调用LLM生成回答失败: %w", err)
+		return "", nil, fmt.Errorf("调用LLM生成回答失败: %w", err)
 	}
 
-	return response, nil
+	// Step 4: 输出审核（可选）
+	if e.reviewer != nil {
+		outResult, err := e.reviewer.Review(ctx, review.ScopeOutput, response)
+		if err != nil {
+			return "", nil, fmt.Errorf("输出审核异常: %w", err)
+		}
+		if !outResult.Passed {
+			// reject — 拦截输出
+			return "", nil, &ReviewRejectedError{
+				Scope:   review.ScopeOutput,
+				Message: outResult.Message,
+			}
+		}
+		if outResult.Action != review.ActionAllow {
+			// 输出审核 warn/review 优先于输入审核的 outcome
+			return response, &ReviewOutcome{
+				Action:       outResult.Action,
+				MatchedRules: outResult.MatchedRules,
+			}, nil
+		}
+	}
+
+	return response, inputOutcome, nil
+}
+
+// ReviewIngest 对入库内容执行审核，供 ChunkService 调用
+func (e *AgentEngine) ReviewIngest(ctx context.Context, content string) (*review.Result, error) {
+	if e.reviewer == nil {
+		return &review.Result{Passed: true, Action: review.ActionAllow}, nil
+	}
+	return e.reviewer.Review(ctx, review.ScopeIngest, content)
 }
 
 // retrieveAll 对多个子查询分别检索，合并去重后按 Score 降序取 Top-K

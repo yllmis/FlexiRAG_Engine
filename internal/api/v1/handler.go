@@ -12,6 +12,7 @@ import (
 	"flexirag-engine/internal/core/agent"
 	"flexirag-engine/internal/core/knowledge"
 	"flexirag-engine/internal/core/ports"
+	"flexirag-engine/internal/core/review"
 	"flexirag-engine/internal/engine"
 
 	"github.com/gin-gonic/gin"
@@ -110,12 +111,17 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 
-	answer, err := h.agentEngine.ProcessQuery(c.Request.Context(), agt, req.Query)
+	answer, outcome, err := h.agentEngine.ProcessQuery(c.Request.Context(), agt, req.Query)
 	if err != nil {
 		agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
-		if errors.Is(err, engine.ErrReviewRejected) {
+		var reviewErr *engine.ReviewRejectedError
+		if errors.As(err, &reviewErr) {
 			h.audit(c, "chat", "agent", agentIDStr, "rejected", err.Error())
-			respondError(c, http.StatusForbidden, "输入内容未通过审核")
+			msg := "输入内容未通过审核"
+			if reviewErr.Scope == review.ScopeOutput {
+				msg = "输出内容未通过审核"
+			}
+			respondError(c, http.StatusForbidden, msg)
 			return
 		}
 		log.Printf("处理失败: %v\n", err)
@@ -124,7 +130,19 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 
-	h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "success", "问答成功")
+	agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
+
+	// 处理审核结果（输入 warn/review 或输出 warn/review）
+	if outcome != nil {
+		switch outcome.Action {
+		case review.ActionReview:
+			h.audit(c, "chat", "agent", agentIDStr, "review", "命中审核规则，需人工复核")
+		case review.ActionWarn:
+			h.audit(c, "chat", "agent", agentIDStr, "warn", "命中审核规则，已记录警告")
+		}
+	}
+
+	h.audit(c, "chat", "agent", agentIDStr, "success", "问答成功")
 	respondSuccess(c, gin.H{"answer": answer})
 }
 
@@ -168,6 +186,26 @@ func (h *Handler) IngestKnowledge(c *gin.Context) {
 		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "overlap 参数不合法")
 		respondError(c, http.StatusBadRequest, "overlap 必须小于 chunk_size")
 		return
+	}
+
+	// 入库审核（可选，异常时 fail-closed）
+	ingestResult, err := h.agentEngine.ReviewIngest(c.Request.Context(), req.Text)
+	if err != nil {
+		log.Printf("入库审核异常: %v\n", err)
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "failed", "入库审核异常")
+		respondError(c, http.StatusInternalServerError, "入库审核异常，请稍后再试")
+		return
+	}
+	if !ingestResult.Passed {
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "rejected", "入库内容未通过审核")
+		respondError(c, http.StatusForbidden, "入库内容未通过审核")
+		return
+	}
+	switch ingestResult.Action {
+	case review.ActionReview:
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "review", "入库内容命中审核规则，需人工复核")
+	case review.ActionWarn:
+		h.audit(c, "knowledge_ingest", "agent", agentIDStr, "warn", "入库内容命中审核规则，已记录警告")
 	}
 
 	err = h.chunkService.IngestText(c.Request.Context(), agt.ID, req.Text, chunkSize, overlap)

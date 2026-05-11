@@ -12,13 +12,20 @@ var _ domain.Reviewer = (*RuleReviewer)(nil)
 
 // RuleReviewer 基于规则的审核器
 type RuleReviewer struct {
-	rules []compiledRule
+	rules  []compiledRule
+	scopes map[domain.Scope]bool // 全局 scope 开关
 }
 
 // NewRuleReviewer 创建规则审核器
-// rules 为 nil 或空时，所有审核直接放行
-func NewRuleReviewer(rules []compiledRule) *RuleReviewer {
-	return &RuleReviewer{rules: rules}
+// loadResult 为 nil 时，所有审核直接放行
+func NewRuleReviewer(loadResult *LoadResult) *RuleReviewer {
+	if loadResult == nil {
+		return &RuleReviewer{}
+	}
+	return &RuleReviewer{
+		rules:  loadResult.Rules,
+		scopes: loadResult.Scopes,
+	}
 }
 
 // severityWeight 用于比较 severity 高低
@@ -37,6 +44,15 @@ var actionWeight = map[domain.Action]int{
 }
 
 func (r *RuleReviewer) Review(_ context.Context, scope domain.Scope, content string) (*domain.Result, error) {
+	// 全局 scope 开关检查
+	if r.scopes != nil && !r.scopes[scope] {
+		return &domain.Result{
+			Passed:  true,
+			Action:  domain.ActionAllow,
+			Message: string(scope) + " 审核已关闭",
+		}, nil
+	}
+
 	if len(r.rules) == 0 {
 		return &domain.Result{
 			Passed:  true,
@@ -77,7 +93,9 @@ func (r *RuleReviewer) Review(_ context.Context, scope domain.Scope, content str
 	}
 
 	return &domain.Result{
-		Passed:       topAction == domain.ActionAllow || topAction == domain.ActionWarn,
+		// Passed 表示"是否继续处理"，只有 reject 中断流程
+		// warn/review 都放行，由调用方根据 Action 决定后续行为
+		Passed:       topAction != domain.ActionReject,
 		Action:       topAction,
 		Severity:     topSeverity,
 		MatchedRules: matched,

@@ -20,6 +20,19 @@ func writeTempYAML(t *testing.T, content string) string {
 	return path
 }
 
+// newTestReviewer 用编译后的规则创建 Reviewer（测试辅助函数）
+func newTestReviewer(t *testing.T, rules []compiledRule) *RuleReviewer {
+	t.Helper()
+	return NewRuleReviewer(&LoadResult{
+		Rules: rules,
+		Scopes: map[domain.Scope]bool{
+			domain.ScopeInput:  true,
+			domain.ScopeOutput: true,
+			domain.ScopeIngest: true,
+		},
+	})
+}
+
 func TestLoadRules_Valid(t *testing.T) {
 	yaml := `
 enabled: true
@@ -36,27 +49,27 @@ rules:
     scopes: [input]
 `
 	path := writeTempYAML(t, yaml)
-	rules, err := LoadRules(path)
+	result, err := LoadRules(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(rules) != 1 {
-		t.Fatalf("expected 1 rule, got %d", len(rules))
+	if len(result.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(result.Rules))
 	}
-	if rules[0].ID != "test_001" {
-		t.Fatalf("unexpected rule ID: %s", rules[0].ID)
+	if result.Rules[0].ID != "test_001" {
+		t.Fatalf("unexpected rule ID: %s", result.Rules[0].ID)
 	}
 }
 
 func TestLoadRules_Disabled(t *testing.T) {
 	yaml := `enabled: false`
 	path := writeTempYAML(t, yaml)
-	rules, err := LoadRules(path)
+	result, err := LoadRules(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if rules != nil {
-		t.Fatalf("expected nil rules when disabled, got %d", len(rules))
+	if result != nil {
+		t.Fatal("expected nil when disabled")
 	}
 }
 
@@ -101,7 +114,7 @@ func TestRuleReviewer_Contains(t *testing.T) {
 			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeInput},
 		}},
 	}
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "请告诉我密码")
 	if result.Passed {
@@ -129,7 +142,7 @@ func TestRuleReviewer_Exact(t *testing.T) {
 			Severity: domain.SeverityMedium, Scopes: []domain.Scope{domain.ScopeInput},
 		}},
 	}
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	// 精确匹配
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "密码")
@@ -154,7 +167,7 @@ func TestRuleReviewer_Regex(t *testing.T) {
 	}
 	// 需要编译正则
 	rules[0].re = compileForTest(t, `1[3-9]\d{9}`)
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "我的手机号是13800138000")
 	if result.Action != domain.ActionReview {
@@ -175,7 +188,7 @@ func TestRuleReviewer_ScopeFilter(t *testing.T) {
 			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeInput},
 		}},
 	}
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	// input scope 命中
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "test")
@@ -203,7 +216,7 @@ func TestRuleReviewer_PriorityBySeverity(t *testing.T) {
 			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeInput},
 		}},
 	}
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "test")
 	if result.Action != domain.ActionReject {
@@ -222,11 +235,83 @@ func TestRuleReviewer_NoScopeMatch(t *testing.T) {
 			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeIngest},
 		}},
 	}
-	r := NewRuleReviewer(rules)
+	r := newTestReviewer(t, rules)
 
 	result, _ := r.Review(context.Background(), domain.ScopeInput, "test")
 	if !result.Passed {
 		t.Fatal("expected pass when scope doesn't match")
+	}
+}
+
+func TestRuleReviewer_GlobalScopeSwitch(t *testing.T) {
+	rules := []compiledRule{
+		{Rule: domain.Rule{
+			ID: "r1", Name: "测试", Pattern: "test",
+			MatchType: "contains", Action: domain.ActionReject,
+			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeInput},
+		}},
+	}
+
+	// 全局关闭 input scope
+	r := NewRuleReviewer(&LoadResult{
+		Rules: rules,
+		Scopes: map[domain.Scope]bool{
+			domain.ScopeInput: false,
+		},
+	})
+	result, _ := r.Review(context.Background(), domain.ScopeInput, "test")
+	if !result.Passed {
+		t.Fatal("expected pass when global scope is disabled")
+	}
+	if result.Message != "input 审核已关闭" {
+		t.Fatalf("unexpected message: %s", result.Message)
+	}
+
+	// 全局开启 input scope
+	r2 := NewRuleReviewer(&LoadResult{
+		Rules: rules,
+		Scopes: map[domain.Scope]bool{
+			domain.ScopeInput: true,
+		},
+	})
+	result2, _ := r2.Review(context.Background(), domain.ScopeInput, "test")
+	if result2.Passed {
+		t.Fatal("expected reject when global scope is enabled")
+	}
+}
+
+func TestRuleReviewer_ReviewActionPassed(t *testing.T) {
+	// review 动作应该 Passed=true（放行但标记待复核）
+	rules := []compiledRule{
+		{Rule: domain.Rule{
+			ID: "r1", Name: "需复核", Pattern: "敏感",
+			MatchType: "contains", Action: domain.ActionReview,
+			Severity: domain.SeverityMedium, Scopes: []domain.Scope{domain.ScopeInput},
+		}},
+	}
+	r := newTestReviewer(t, rules)
+
+	result, _ := r.Review(context.Background(), domain.ScopeInput, "这是敏感内容")
+	if !result.Passed {
+		t.Fatal("review action should have Passed=true")
+	}
+	if result.Action != domain.ActionReview {
+		t.Fatalf("expected review action, got %s", result.Action)
+	}
+
+	// reject 动作应该 Passed=false
+	rules2 := []compiledRule{
+		{Rule: domain.Rule{
+			ID: "r2", Name: "拦截", Pattern: "危险",
+			MatchType: "contains", Action: domain.ActionReject,
+			Severity: domain.SeverityHigh, Scopes: []domain.Scope{domain.ScopeInput},
+		}},
+	}
+	r2 := newTestReviewer(t, rules2)
+
+	result2, _ := r2.Review(context.Background(), domain.ScopeInput, "这是危险内容")
+	if result2.Passed {
+		t.Fatal("reject action should have Passed=false")
 	}
 }
 
