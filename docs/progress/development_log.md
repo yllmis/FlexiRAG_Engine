@@ -2,6 +2,16 @@
 
 本文档用于记录项目阶段性变更，便于新开窗口后快速了解当前状态与开发进度。
 
+## 2026-05-09
+
+- 已更新 `docs/architecture/multi_agent_review_retrieval_plan_v1.md`：方案从“多 Agent 审核与检索编排”收敛为“模块化审核与检索编排增强”。
+- 已明确当前阶段不追求全链路重 Agent 化，原因是简单自用或公司内部 RAG 不适合因多 Agent 串行调用而显著抬高 token 消耗、时延与维护复杂度。
+- 已将能力优先级调整为：查询理解模块、Hybrid Retrieval、RRF 融合、上下文压缩、输入/输出/入库审核模块。
+- 已明确简单查询重写更适合作为“查询理解模块”，只有在涉及查询分类、路由、多查询扩展、流程决策时，才考虑升级为轻量 Agent 或智能节点。
+- 已补充审核规则配置思路：采用 `docs/rules/review_rules.md` + `configs/review_rules.yaml` 的双文件模式，其中 `md` 负责规则说明，`yaml` 负责程序执行。
+- 已明确审核模块优先采用规则驱动：先做敏感词、正则、Prompt Injection 特征、长度与垃圾内容规则，灰区场景后续再考虑模型兜底。
+- 已进一步统一文档口径：移除方案中残留的“默认多 Agent / 多智能节点协作”表达，收敛为“模块优先、必要时再做智能增强”的实现路线。
+
 ## 2026-04-30
 
 - 已新增多 Agent 审核与检索编排方案文档：`docs/architecture/multi_agent_review_retrieval_plan_v1.md`。

@@ -112,8 +112,14 @@ func (h *Handler) Chat(c *gin.Context) {
 
 	answer, err := h.agentEngine.ProcessQuery(c.Request.Context(), agt, req.Query)
 	if err != nil {
+		agentIDStr := strconv.FormatUint(uint64(req.AgentID), 10)
+		if errors.Is(err, engine.ErrReviewRejected) {
+			h.audit(c, "chat", "agent", agentIDStr, "rejected", err.Error())
+			respondError(c, http.StatusForbidden, "输入内容未通过审核")
+			return
+		}
 		log.Printf("处理失败: %v\n", err)
-		h.audit(c, "chat", "agent", strconv.FormatUint(uint64(req.AgentID), 10), "failed", "AI 思考失败")
+		h.audit(c, "chat", "agent", agentIDStr, "failed", "AI 思考失败")
 		respondError(c, http.StatusInternalServerError, "AI 思考失败，请稍后再试")
 		return
 	}

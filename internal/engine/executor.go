@@ -2,19 +2,25 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"flexirag-engine/internal/core"
 	"flexirag-engine/internal/core/agent"
 	"flexirag-engine/internal/core/ports"
 	"flexirag-engine/internal/core/retrieval"
+	"flexirag-engine/internal/core/review"
 	"fmt"
 	"sort"
 	"strings"
 )
 
+// ErrReviewRejected 输入审核被拒绝时返回
+var ErrReviewRejected = errors.New("输入审核未通过")
+
 type AgentEngine struct {
 	llm      ports.LLMProvider
 	vector   ports.VectorStore
 	rewriter retrieval.QueryRewriter // 可选，nil 表示不做改写
+	reviewer review.Reviewer         // 可选，nil 表示不做审核
 }
 
 type EngineOption func(*AgentEngine)
@@ -22,6 +28,12 @@ type EngineOption func(*AgentEngine)
 func WithQueryRewriter(r retrieval.QueryRewriter) EngineOption {
 	return func(e *AgentEngine) {
 		e.rewriter = r
+	}
+}
+
+func WithReviewer(r review.Reviewer) EngineOption {
+	return func(e *AgentEngine) {
+		e.reviewer = r
 	}
 }
 
@@ -39,6 +51,17 @@ func NewAgentEngine(llm ports.LLMProvider, vector ports.VectorStore, opts ...Eng
 const defaultTopK = 3
 
 func (e *AgentEngine) ProcessQuery(ctx context.Context, agt *agent.Agent, query string) (string, error) {
+	// Step 0: 输入审核（可选）
+	if e.reviewer != nil {
+		result, err := e.reviewer.Review(ctx, review.ScopeInput, query)
+		if err != nil {
+			return "", fmt.Errorf("输入审核异常: %w", err)
+		}
+		if !result.Passed {
+			return "", fmt.Errorf("%w: %s", ErrReviewRejected, result.Message)
+		}
+	}
+
 	// Step 1: 查询改写（可选）
 	queries := []string{query}
 	if e.rewriter != nil {

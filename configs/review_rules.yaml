@@ -1,0 +1,55 @@
+enabled: true
+
+scopes:
+  input: true
+  output: true
+  ingest: true
+
+rules:
+  # ── Prompt Injection ──
+  - id: prompt_injection_001
+    name: 忽略系统提示词攻击
+    pattern: "忽略(之前|以上|所有)的?(指令|规则|提示词)"
+    match_type: regex
+    category: prompt_injection
+    action: reject
+    severity: high
+    scopes: [input]
+
+  - id: prompt_injection_002
+    name: 系统提示词泄露
+    pattern: "system prompt"
+    match_type: contains
+    category: prompt_injection
+    action: reject
+    severity: high
+    scopes: [input]
+
+  - id: prompt_injection_003
+    name: 角色扮演注入
+    pattern: "你现在是"
+    match_type: contains
+    category: prompt_injection
+    action: warn
+    severity: medium
+    scopes: [input]
+
+  # ── 敏感内容 ──
+  - id: sensitive_content_001
+    name: 超长输入检测
+    pattern: "^.{2000,}$"
+    match_type: regex
+    category: garbage_input
+    action: reject
+    severity: medium
+    scopes: [input]
+
+  # ── 业务敏感 ──
+  - id: biz_sensitive_001
+    name: 薪资信息查询
+    pattern: "薪资"
+    match_type: contains
+    category: business_sensitive
+    action: review
+    severity: medium
+    scopes: [input, output]

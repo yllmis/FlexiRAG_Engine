@@ -16,6 +16,7 @@ import (
 	"flexirag-engine/internal/infrastructure/database"
 	"flexirag-engine/internal/infrastructure/llm"
 	"flexirag-engine/internal/infrastructure/ratelimit"
+	reviewInfra "flexirag-engine/internal/infrastructure/review"
 	"flexirag-engine/internal/infrastructure/repository"
 	"flexirag-engine/internal/infrastructure/vector"
 
@@ -64,7 +65,20 @@ func main() {
 
 	rewriter := llm.NewLLMQueryRewriter(llmProvider)
 
-	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore, engine.WithQueryRewriter(rewriter))
+	// 加载审核规则（可选，文件不存在则跳过）
+	var engineOpts []engine.EngineOption
+	engineOpts = append(engineOpts, engine.WithQueryRewriter(rewriter))
+
+	rules, err := reviewInfra.LoadRules("configs/review_rules.yaml")
+	if err != nil {
+		log.Printf("加载审核规则失败，跳过审核: %v", err)
+	} else if rules != nil {
+		reviewer := reviewInfra.NewRuleReviewer(rules)
+		engineOpts = append(engineOpts, engine.WithReviewer(reviewer))
+		log.Printf("审核模块已启用，加载 %d 条规则", len(rules))
+	}
+
+	agentEngine := engine.NewAgentEngine(llmProvider, vectorStore, engineOpts...)
 	chunkService := knowledge.NewChunkService(llmProvider, vectorStore)
 	agentSvc := agent.NewAgentService(agentRepo)
 	auditLogger := audit.NewAsyncWriter(auditRepo, cfg.Security.AuditQueueSize)
