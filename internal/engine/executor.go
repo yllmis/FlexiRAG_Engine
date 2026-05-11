@@ -9,7 +9,6 @@ import (
 	"flexirag-engine/internal/core/retrieval"
 	"flexirag-engine/internal/core/review"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -186,67 +185,40 @@ func (e *AgentEngine) ReviewIngest(ctx context.Context, content string) (*review
 	return e.reviewer.Review(ctx, review.ScopeIngest, content)
 }
 
-// retrieveAll 对多个子查询分别检索，合并去重后按 Score 降序取 Top-K
+// retrieveAll 对多个子查询分别做稠密和稀疏检索，用 RRF 融合后取 Top-K
 func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []string) []core.SearchResult {
-	seen := make(map[string]bool)
-	var merged []core.SearchResult
+	var denseResults []core.SearchResult
+	var sparseResults []core.SearchResult
 
-	// 稠密向量检索
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
 		if q == "" {
 			continue
 		}
 
+		// 稠密向量检索
 		vectors, err := e.llm.Embed(ctx, []string{q})
-		if err != nil || len(vectors) == 0 || len(vectors[0]) == 0 {
-			continue
-		}
-
-		results, err := e.vector.Search(ctx, agentID, vectors[0], defaultTopK)
-		if err != nil {
-			continue
-		}
-
-		for _, r := range results {
-			if seen[r.ID] {
-				continue
+		if err == nil && len(vectors) > 0 && len(vectors[0]) > 0 {
+			results, err := e.vector.Search(ctx, agentID, vectors[0], defaultTopK)
+			if err == nil {
+				denseResults = append(denseResults, results...)
 			}
-			seen[r.ID] = true
-			merged = append(merged, r)
 		}
-	}
 
-	// 稀疏全文检索（可选）
-	if e.sparse != nil {
-		for _, q := range queries {
-			q = strings.TrimSpace(q)
-			if q == "" {
-				continue
-			}
-
+		// 稀疏全文检索（可选）
+		if e.sparse != nil {
 			results, err := e.sparse.Search(ctx, agentID, q, defaultTopK)
-			if err != nil {
-				continue
-			}
-
-			for _, r := range results {
-				if seen[r.ID] {
-					continue
-				}
-				seen[r.ID] = true
-				merged = append(merged, r)
+			if err == nil {
+				sparseResults = append(sparseResults, results...)
 			}
 		}
 	}
 
-	// 按 Score 降序排列，取前 defaultTopK
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score > merged[j].Score
-	})
-	if len(merged) > defaultTopK {
-		merged = merged[:defaultTopK]
+	// sparse 未启用时，退化为纯 dense 排序
+	if e.sparse == nil || len(sparseResults) == 0 {
+		return sortByScore(denseResults, defaultTopK)
 	}
 
-	return merged
+	// RRF 融合：dense 为一路，sparse 为一路
+	return rrfFuse([][]core.SearchResult{denseResults, sparseResults}, defaultTopK)
 }
