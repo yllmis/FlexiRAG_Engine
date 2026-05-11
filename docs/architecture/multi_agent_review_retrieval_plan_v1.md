@@ -484,6 +484,125 @@ query
 - token 成本几乎不增加
 - 很适合当前项目
 
+#### 8.3.1 当前状态
+
+当前项目已经具备：
+
+- Dense Retrieval（pgvector 语义检索）
+- Sparse Retrieval（PostgreSQL FTS 关键词检索）
+- RRF Lite 融合骨架
+
+当前实现位置：
+
+- `internal/engine/executor.go`
+- `internal/engine/rrf.go`
+
+当前实现方式更准确地说是：
+
+```text
+多个子查询
+  -> 所有 dense 结果先拼成一个 dense 总榜
+  -> 所有 sparse 结果先拼成一个 sparse 总榜
+  -> 对两条总榜做一次 RRF
+```
+
+这个版本已经解决了“dense 分数与 sparse 分数不可直接比较”的问题，但它还不是标准的全局 RRF。
+
+当前主要局限：
+
+- 丢失了“每个子查询都是一条独立 ranked list”的语义
+- 多个子查询同时命中同一文档时，融合收益没有被完整保留
+- 同一路内重复文档需要显式做首次命中去重
+- 还没有保留检索来源信息（来自哪条 query、哪种 retrieval）
+
+#### 8.3.2 目标状态：标准全局 RRF
+
+标准目标形态如下：
+
+```text
+用户问题
+  -> 查询理解模块
+  -> 得到多个子查询 q1, q2, q3 ...
+  -> q1-dense 形成一条 ranked list
+  -> q1-sparse 形成一条 ranked list
+  -> q2-dense 形成一条 ranked list
+  -> q2-sparse 形成一条 ranked list
+  -> ...
+  -> 所有 ranked lists 一次性进入全局 RRF
+  -> 得到最终 Top-K 候选
+```
+
+也就是说：
+
+- RRF 的输入单位不是“dense 一路、sparse 一路”
+- 而是“每个 子查询 × 检索方式 形成的一条独立排序列表”
+
+对应的 RRF 公式保持不变：
+
+```text
+Score(d) = Σ 1 / (k + rank_i(d))
+```
+
+设计意图：
+
+- 用排名而不是原始分数做融合，避免不同检索路径分数量纲不一致
+- 保留多 query 命中信号
+- 保留 dense / sparse 双路命中信号
+- 在不引入额外模型调用的前提下提升融合排序质量
+
+#### 8.3.3 第一版落地边界（推荐）
+
+建议这一版只做“标准 RRF 轻量实现”，不做过度扩展。
+
+这一版一定要做：
+
+1. 每个 `query × retrieval_type` 单独形成 ranked list
+2. 所有 lists 一次性传入 `rrfFuse`
+3. 同一条 list 内部重复文档只取首次排名
+4. 融合后统一排序并截断 topK
+5. 补单测锁住排序语义
+
+这一版先不要做：
+
+- 动态权重
+- dense / sparse 人工加权
+- 学习排序
+- 重型 rerank
+- 动态调整 `rrfK`
+
+原因：
+
+- 先把 RRF 的核心语义做对
+- 控制工程复杂度
+- 保持项目“模块化增强优先”的路线
+
+#### 8.3.4 后续增强方向
+
+标准 RRF 做稳之后，再考虑下面几项：
+
+1. `source/citations` 返回
+   - 标记结果来自 dense、sparse，还是双路同时命中
+   - 标记命中的子查询来源
+2. 上下文压缩
+   - 在最终 Top-K 后做去噪、摘要、重点句提取
+3. 中文 sparse 检索增强
+   - 当前 PostgreSQL `simple` FTS 更适合作为关键词补充检索
+   - 若后续要强化中文能力，再考虑中文分词或 trigram 兜底
+
+#### 8.3.5 验收标准
+
+完成标准 RRF 轻量实现后，应满足：
+
+- Dense 与 Sparse 原始分数不再直接混排比较
+- 同一文档在多个子查询、多种检索路径中命中时，能够正确累计 RRF 分数
+- 同一条 list 内重复文档不会重复累计票数
+- RRF 单测能覆盖：
+  - 多 query、多 list 融合
+  - 单 list 重复 ID 去重
+  - Top-K 截断
+  - 同分稳定排序
+  - 空输入与退化路径
+
 ### 8.4 Multi-query（P1）
 
 说明：

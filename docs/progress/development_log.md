@@ -2,6 +2,18 @@
 
 本文档用于记录项目阶段性变更，便于新开窗口后快速了解当前状态与开发进度。
 
+## 2026-05-11
+
+- 已更新 `docs/architecture/multi_agent_review_retrieval_plan_v1.md` 中的 RRF 方案说明，明确当前项目的 RRF 属于 `RRF Lite`，不是完整标准版。
+- 已明确当前 RRF 的真实状态：多个子查询的 dense 结果会先合成一条总榜，sparse 结果合成另一条总榜，再对两条总榜做一次 RRF。
+- 已明确标准目标形态：每个 `子查询 × 检索方式` 都形成一条独立 ranked list，最终所有 lists 一次性进入全局 RRF。
+- 已明确当前 RRF 方案的主要问题：
+  - 还没有完整保留多 query 独立成榜语义
+  - 同一条 list 内重复文档需要显式只取首次排名
+  - 尚未保留结果来源信息（query / dense / sparse）
+- 已收敛 RRF 下一阶段目标：先做“标准 RRF 轻量实现”，暂不引入动态权重、重型 rerank 和复杂学习排序。
+- 已明确后续与 RRF 强相关的增强方向：`source/citations` 返回、上下文压缩、中文 sparse 检索增强。
+
 ## 2026-05-09
 
 - 已更新 `docs/architecture/multi_agent_review_retrieval_plan_v1.md`：方案从“多 Agent 审核与检索编排”收敛为“模块化审核与检索编排增强”。
@@ -21,9 +33,9 @@
 ## 2026-04-30
 
 - 已新增多 Agent 审核与检索编排方案文档：`docs/architecture/multi_agent_review_retrieval_plan_v1.md`。
-- 已明确项目下一阶段主线：优先演进为“多 Agent 审核 + 查询理解 + Hybrid Retrieval + RRF 融合”的 Agent-RAG 系统，而不是继续仅做普通单路向量检索问答。
+- 当时的初版方向曾规划为“多 Agent 审核 + 查询理解 + Hybrid Retrieval + RRF 融合”的 Agent-RAG 系统；该方向后续已收敛为“模块化增强优先”的当前方案。
 - 方案文档中已补充半个月可执行学习路线：包含项目现状梳理、RAG 编排基础、审核 Agent 基础、查询改写、双路检索、融合排序、测试与文档包装。
-- 已明确首期最推荐交付组合：输入审核 Agent、查询改写 Agent、Dense + Sparse 检索、RRF 融合、引用结果返回。
+- 当时的初版交付组合包含输入审核 Agent、查询改写 Agent、Dense + Sparse 检索、RRF 融合、引用结果返回；其中 Agent 化部分后续已调整为模块化能力实现。
 
 ## 2026-03-17
 

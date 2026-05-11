@@ -185,10 +185,11 @@ func (e *AgentEngine) ReviewIngest(ctx context.Context, content string) (*review
 	return e.reviewer.Review(ctx, review.ScopeIngest, content)
 }
 
-// retrieveAll 对多个子查询分别做稠密和稀疏检索，用 RRF 融合后取 Top-K
+// retrieveAll 对多个子查询分别做稠密和稀疏检索，每条 (query × retrieval_type) 形成独立 ranked list，
+// 所有 lists 一次性进入全局 RRF 融合后取 Top-K
 func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []string) []core.SearchResult {
-	var denseResults []core.SearchResult
-	var sparseResults []core.SearchResult
+	var lists [][]core.SearchResult
+	hasSparse := false
 
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
@@ -196,29 +197,34 @@ func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []s
 			continue
 		}
 
-		// 稠密向量检索
+		// 稠密向量检索 → 独立 ranked list
 		vectors, err := e.llm.Embed(ctx, []string{q})
 		if err == nil && len(vectors) > 0 && len(vectors[0]) > 0 {
 			results, err := e.vector.Search(ctx, agentID, vectors[0], defaultTopK)
-			if err == nil {
-				denseResults = append(denseResults, results...)
+			if err == nil && len(results) > 0 {
+				lists = append(lists, results)
 			}
 		}
 
-		// 稀疏全文检索（可选）
+		// 稀疏全文检索 → 独立 ranked list
 		if e.sparse != nil {
 			results, err := e.sparse.Search(ctx, agentID, q, defaultTopK)
-			if err == nil {
-				sparseResults = append(sparseResults, results...)
+			if err == nil && len(results) > 0 {
+				lists = append(lists, results)
+				hasSparse = true
 			}
 		}
 	}
 
 	// sparse 未启用时，退化为纯 dense 排序
-	if e.sparse == nil || len(sparseResults) == 0 {
-		return sortByScore(denseResults, defaultTopK)
+	if e.sparse == nil || !hasSparse {
+		var all []core.SearchResult
+		for _, list := range lists {
+			all = append(all, list...)
+		}
+		return sortByScore(all, defaultTopK)
 	}
 
-	// RRF 融合：dense 为一路，sparse 为一路
-	return rrfFuse([][]core.SearchResult{denseResults, sparseResults}, defaultTopK)
+	// 全局 RRF 融合：每个 (query × retrieval_type) 都是独立 ranked list
+	return rrfFuse(lists, defaultTopK)
 }
