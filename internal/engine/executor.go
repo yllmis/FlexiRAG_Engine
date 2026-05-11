@@ -48,11 +48,18 @@ type ReviewOutcome struct {
 type AgentEngine struct {
 	llm      ports.LLMProvider
 	vector   ports.VectorStore
-	rewriter retrieval.QueryRewriter // 可选，nil 表示不做改写
-	reviewer review.Reviewer         // 可选，nil 表示不做审核
+	sparse   ports.SparseRetriever    // 可选，nil 表示不做稀疏检索
+	rewriter retrieval.QueryRewriter  // 可选，nil 表示不做改写
+	reviewer review.Reviewer          // 可选，nil 表示不做审核
 }
 
 type EngineOption func(*AgentEngine)
+
+func WithSparseRetriever(s ports.SparseRetriever) EngineOption {
+	return func(e *AgentEngine) {
+		e.sparse = s
+	}
+}
 
 func WithQueryRewriter(r retrieval.QueryRewriter) EngineOption {
 	return func(e *AgentEngine) {
@@ -184,6 +191,7 @@ func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []s
 	seen := make(map[string]bool)
 	var merged []core.SearchResult
 
+	// 稠密向量检索
 	for _, q := range queries {
 		q = strings.TrimSpace(q)
 		if q == "" {
@@ -206,6 +214,29 @@ func (e *AgentEngine) retrieveAll(ctx context.Context, agentID uint, queries []s
 			}
 			seen[r.ID] = true
 			merged = append(merged, r)
+		}
+	}
+
+	// 稀疏全文检索（可选）
+	if e.sparse != nil {
+		for _, q := range queries {
+			q = strings.TrimSpace(q)
+			if q == "" {
+				continue
+			}
+
+			results, err := e.sparse.Search(ctx, agentID, q, defaultTopK)
+			if err != nil {
+				continue
+			}
+
+			for _, r := range results {
+				if seen[r.ID] {
+					continue
+				}
+				seen[r.ID] = true
+				merged = append(merged, r)
+			}
 		}
 	}
 

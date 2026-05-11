@@ -14,9 +14,10 @@ import (
 var _ ports.VectorStore = (*PGVectorStore)(nil)
 
 type DocumentChunk struct {
-	ID      string `gorm:"primaryKey;type:varchar(255)"`
-	AgentID uint   `gorm:"index;not null"` // 加普通索引，加速多租户过滤
-	Content string `gorm:"type:text;not null"`
+	ID         string `gorm:"primaryKey;type:varchar(255)"`
+	AgentID    uint   `gorm:"index;not null"` // 加普通索引，加速多租户过滤
+	Content    string `gorm:"type:text;not null"`
+	ContentTsv string `gorm:"type:tsvector;column:content_tsv"` // PostgreSQL FTS 向量
 	// 这样设计是为了兼容不同厂商的模型（OpenAI 1536维，GLM 可能 1024维）
 	Embedding pgvector.Vector `gorm:"type:vector"`
 }
@@ -37,7 +38,49 @@ func NewPGVectorStore(db *gorm.DB) (*PGVectorStore, error) {
 		return nil, err
 	}
 
+	// 初始化 PostgreSQL FTS：trigger 自动维护 content_tsv + GIN 索引
+	if err := initFTS(db); err != nil {
+		return nil, err
+	}
+
 	return &PGVectorStore{db: db}, nil
+}
+
+// initFTS 创建 trigger 函数和 GIN 索引，确保 content_tsv 与 content 列自动同步
+func initFTS(db *gorm.DB) error {
+	// 1. 回填已有行的 content_tsv
+	if err := db.Exec(`UPDATE document_chunks SET content_tsv = to_tsvector('simple', content) WHERE content_tsv IS NULL`).Error; err != nil {
+		return fmt.Errorf("回填 content_tsv 失败: %w", err)
+	}
+
+	// 2. 创建 trigger 函数：INSERT/UPDATE 时自动从 content 计算 content_tsv
+	if err := db.Exec(`
+		CREATE OR REPLACE FUNCTION document_chunks_tsv_trigger() RETURNS trigger AS $$
+		BEGIN
+			NEW.content_tsv := to_tsvector('simple', NEW.content);
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+	`).Error; err != nil {
+		return fmt.Errorf("创建 FTS trigger 函数失败: %w", err)
+	}
+
+	// 3. 绑定 trigger（DROP IF EXISTS 保证幂等）
+	if err := db.Exec(`
+		DROP TRIGGER IF EXISTS tsvector_update ON document_chunks;
+		CREATE TRIGGER tsvector_update
+			BEFORE INSERT OR UPDATE OF content ON document_chunks
+			FOR EACH ROW EXECUTE FUNCTION document_chunks_tsv_trigger();
+	`).Error; err != nil {
+		return fmt.Errorf("创建 FTS trigger 失败: %w", err)
+	}
+
+	// 4. 创建 GIN 索引（IF NOT EXISTS 保证幂等）
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_content_tsv ON document_chunks USING GIN (content_tsv)`).Error; err != nil {
+		return fmt.Errorf("创建 FTS GIN 索引失败: %w", err)
+	}
+
+	return nil
 }
 
 func (p *PGVectorStore) Upsert(ctx context.Context, id string, vector []float32, metadata map[string]interface{}) error {
@@ -60,6 +103,7 @@ func (p *PGVectorStore) Upsert(ctx context.Context, id string, vector []float32,
 	}
 
 	// 对应 SQL: INSERT ... ON CONFLICT (id) DO UPDATE SET ...
+	// content_tsv 不在此处填充——由 PostgreSQL trigger 自动从 content 列计算
 	return p.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},

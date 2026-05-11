@@ -54,6 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatal("初始化 PG 向量库失败: ", err)
 	}
+	sparseRetriever := vector.NewPGSparseRetriever(db)
 	agentRepo, err := repository.NewPGAgentRepo(db)
 	if err != nil {
 		log.Fatal("初始化 Agent 仓储失败: ", err)
@@ -68,6 +69,7 @@ func main() {
 	// 加载审核规则（可选，文件不存在则跳过）
 	var engineOpts []engine.EngineOption
 	engineOpts = append(engineOpts, engine.WithQueryRewriter(rewriter))
+	engineOpts = append(engineOpts, engine.WithSparseRetriever(sparseRetriever))
 
 	loadResult, err := reviewInfra.LoadRules("configs/review_rules.yaml")
 	if err != nil {
